@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 cache_folder = os.getenv('CACHE_FOLDER')
+os.makedirs(cache_folder, exist_ok=True)
 
 b2_app_id = os.getenv('B2_KEY_ID')
 b2_app_key = os.getenv('B2_APP_KEY')
@@ -44,11 +45,11 @@ def b2_cache_file(filename):
     filepath = os.path.join(cache_folder, filename)
 
     try:
-        with open(filepath, 'wb') as file:
-            b2_bucket.download_file_by_name(str(filename), file)
+        file_download = b2_bucket.download_file_by_name(file_name=filename)
+        file_download.save_to(filepath, 'wb')
 
         return filepath
 
     except Exception as e:
-        print(f"Exception found when uploading '{filename}': \n {e}")
+        print(f"Exception found when caching '{filename}': \n {e}")
         return False

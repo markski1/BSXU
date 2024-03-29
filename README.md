@@ -18,3 +18,4 @@ A detailed guide like the one in the PSXU Readme will be written soon.
 ### TODO:
 
 - Web interface with file viewer, management, manual uploading and downloading.
+- Make use of 'CACHE_MAX_SIZE_MB'. (If the size of the cache folder exceeds the size, the oldest files should be truncated until it's size is 1/4 of CACHE_MAX_SIZE_MB)
