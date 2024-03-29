@@ -34,7 +34,7 @@ def b2_file_upload(filepath):
 
 def b2_file_exists(filename):
     try:
-        b2_bucket.get_file_info(str(filename))
+        b2_bucket.get_file_info_by_name(str(filename))
         return True
     except FileNotPresent:
         return False
@@ -45,7 +45,7 @@ def b2_cache_file(filename):
 
     try:
         with open(filepath, 'wb') as file:
-            bucket.download_file_by_name(str(filename), file)
+            b2_bucket.download_file_by_name(str(filename), file)
 
         return filepath
 
