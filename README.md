@@ -11,9 +11,13 @@ Key differences:
 
 ### Setup
 
-For now, you simply fill in the blanks in the .env file, run it and it just works.
+You can follow [this guide](https://markski.ar/blog/bsxu-b2-hosting) in my blog.
 
-A detailed guide like the one in the PSXU Readme will be written soon.
+### Contributing
+
+Find issue, don't want make change, open issue.
+
+Find issue, want make change, open PR.
 
 ### TODO:
 
