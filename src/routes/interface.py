@@ -4,4 +4,4 @@ from core.config import app
 
 @app.route("/")
 def index():
-    return "ok"
+    return render_template("login.html")

@@ -1,0 +1,19 @@
+body {
+    background-color: #333333;
+    font-family: Tahoma, SansSerif;
+    color: #BBBBBB;
+}
+
+main {
+    margin: 2rem auto auto;
+    width: 50%;
+    max-width: 800px;
+    background-color: #CCCCCC;
+    padding: 2rem;
+    color: #202020;
+}
+
+footer {
+    margin: 2rem auto auto;
+    text-align: center;
+}
