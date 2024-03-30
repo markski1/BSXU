@@ -43,7 +43,7 @@ def upload_file():
 @app.route("/<string:filename>")
 def get_file(filename):
     # Check local cache
-    filepath = os.path.join(cache_folder, filename)
+    filepath = str(os.path.join(cache_folder, filename))
     if os.path.isfile(filepath):
         return send_file(filepath)
 

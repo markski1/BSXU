@@ -35,7 +35,7 @@ def b2_file_exists(filename):
 
 
 def b2_cache_file(filename):
-    filepath = os.path.join(cache_folder, filename)
+    filepath = str(os.path.join(cache_folder, filename))
 
     try:
         file_download = b2_bucket.download_file_by_name(file_name=filename)

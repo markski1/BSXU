@@ -1,5 +1,3 @@
-import os
-
 from core.config import app, app_host, app_port, app_debug
 
 # Routes
