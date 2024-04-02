@@ -5,14 +5,13 @@
 
     <h3>Admin panel</h3>
     <ul>
-        <li>Files in B2: [TODO: Amount of files] ([TODO: Size of files])</li>
-        <li>Files cached: {{ cache_amount }} ({{ cache_size }} Kb)</li>
+        <li>Files in cache: {{ cache_amount }} ({{ cache_size }} Kb)</li>
+        <li>Hits last 24h: [TODO]</li>
     </ul>
 
     <a role="button" class="menu-button" href="/panel/cache">See cached files</a>
-    <a role="button" class="menu-button" href="/panel/files">See all files</a>
-    <a role="button" class="menu-button" href="/panel/stats">See stats since last restart</a>
+    <a role="button" class="menu-button" href="/panel/stats">See stats</a>
 
-    <p><a href="/logout">Logout</a></p>
+    <p><a href="/panel/logout">Logout</a></p>
 
 {% endblock %}

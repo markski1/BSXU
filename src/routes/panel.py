@@ -44,7 +44,8 @@ def logout():
 @login_required
 def main_ui():
     file_list, total_size = cached_file_data()
-    return render_template("panel.html", cache_amount=len(file_list), cache_size=f'{total_size:,}')
+    return render_template("panel.html",
+                           cache_amount=len(file_list), cache_size=f'{total_size:,}')
 
 
 @panel_bp.route("/cache")
@@ -54,10 +55,10 @@ def cache_files_ui():
     return render_template("cache.html", cached_files=file_list, total_size=f'{total_size:,}')
 
 
-@panel_bp.route("/all-files")
+@panel_bp.route("/stats")
 @login_required
-def files_ui():
-    return render_template("files.html")
+def stats_ui():
+    return "Not yet implemented."
 
 
 # Actions
