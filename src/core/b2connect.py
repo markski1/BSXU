@@ -26,14 +26,6 @@ def b2_file_upload(filepath):
         return False
 
 
-def b2_file_exists(filename):
-    try:
-        b2_bucket.get_file_info_by_name(str(filename))
-        return True
-    except FileNotPresent:
-        return False
-
-
 def b2_cache_file(filename):
     filepath = str(os.path.join(cache_folder, filename))
 
@@ -42,6 +34,12 @@ def b2_cache_file(filename):
         file_download.save_to(filepath, 'wb')
 
         return filepath
+
+    except FileNotPresent:
+        return False
+
+    except FileNotFoundError:
+        return False
 
     except Exception as e:
         print(f"Exception found when caching '{filename}': \n {e}")

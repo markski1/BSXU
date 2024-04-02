@@ -20,7 +20,14 @@ footer {
     text-align: center;
 }
 
-/* Components */
+/* W3 Components */
+
+table, td {
+    border: 0 #222222 solid;
+    color: black;
+}
+
+/* My Components */
 
 .menu-button {
     border-radius: 5px;
