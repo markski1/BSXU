@@ -1,20 +1,13 @@
 from b2sdk.exception import *
 from b2sdk.v2 import *
 import os
-from dotenv import load_dotenv
 
-load_dotenv()
-
-cache_folder = os.getenv('CACHE_FOLDER')
-os.makedirs(cache_folder, exist_ok=True)
-
-b2_app_id = os.getenv('B2_KEY_ID')
-b2_app_key = os.getenv('B2_APP_KEY')
+from core.config import cache_folder, b2_app_id, b2_app_key, b2_bucket_name
 
 info = InMemoryAccountInfo()
 b2_api = B2Api(info)
 b2_api.authorize_account("production", b2_app_id, b2_app_key)
-b2_bucket = b2_api.get_bucket_by_name(os.getenv('B2_BUCKET_NAME'))
+b2_bucket = b2_api.get_bucket_by_name(b2_bucket_name)
 
 
 def b2_file_upload(filepath):
@@ -33,22 +26,20 @@ def b2_file_upload(filepath):
         return False
 
 
-def b2_file_exists(filename):
-    try:
-        b2_bucket.get_file_info_by_name(str(filename))
-        return True
-    except FileNotPresent:
-        return False
-
-
 def b2_cache_file(filename):
-    filepath = os.path.join(cache_folder, filename)
+    filepath = str(os.path.join(cache_folder, filename))
 
     try:
         file_download = b2_bucket.download_file_by_name(file_name=filename)
         file_download.save_to(filepath, 'wb')
 
         return filepath
+
+    except FileNotPresent:
+        return False
+
+    except FileNotFoundError:
+        return False
 
     except Exception as e:
         print(f"Exception found when caching '{filename}': \n {e}")
