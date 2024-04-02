@@ -6,7 +6,7 @@ from flask import send_file, request
 from werkzeug.utils import secure_filename
 
 from misc import generate_random_string
-from core.b2connect import b2_file_upload, b2_file_exists, b2_cache_file
+from core.b2connect import b2_file_upload, b2_cache_file
 
 
 @app.post("/upload")
@@ -43,15 +43,13 @@ def upload_file():
 @app.route("/<string:filename>")
 def get_file(filename):
     # Check local cache
-    filepath = os.path.join(cache_folder, filename)
+    filepath = str(os.path.join(cache_folder, filename))
     if os.path.isfile(filepath):
         return send_file(filepath)
 
     # If not in cache, check B2
-    if b2_file_exists(filename):
-        filepath = b2_cache_file(filename)
-        if not filepath:
-            return "Error caching file. Check console output for details."
+    filepath = b2_cache_file(filename)
+    if filepath:
         return send_file(filepath)
 
     return "File does not exist."

@@ -1,4 +1,5 @@
 werkzeug
 flask
+flask-login
 python-dotenv
 b2sdk

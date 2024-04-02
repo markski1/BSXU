@@ -1,6 +1,7 @@
 import os
 from dotenv import load_dotenv
 from flask import Flask
+from core import session
 
 load_dotenv()
 
@@ -19,6 +20,12 @@ app_host = os.getenv('APP_HOST')
 app_port = os.getenv('APP_PORT')
 app_debug = os.getenv('APP_DEBUG')
 
+panel_enabled = os.getenv('PANEL_ENABLED') == 'true'
+
 app = Flask(__name__,
             static_folder="../webpanel/static",
             template_folder="../webpanel/templates")
+
+session.init_app(app)
+
+app.config['SECRET_KEY'] = os.getenv('SECRET_KEY')

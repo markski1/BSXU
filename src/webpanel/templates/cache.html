@@ -1,0 +1,36 @@
+{% extends "layout.html" %}
+{% block title %}Login{% endblock %}
+
+{% block main %}
+
+    <h3>Admin panel</h3>
+    <p>Cached files</p>
+
+    {% if cached_files %}
+        <table>
+            <thead>
+                <tr>
+                    <td><b>Name</b></td>
+                    <td><b>Size</b></td>
+                </tr>
+            </thead>
+            <tbody>
+                {% for file in cached_files %}
+                    <tr>
+                        <td>{{ file['name'] }}</td>
+                        <td>{{ file['size'] }} Kb</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+    {% else %}
+        <p>No files in cache.</p>
+    {% endif %}
+
+    <p>Cache size: {{ total_size }} Kb</p>
+
+    <a role="button" class="menu-button" href="/panel/cache/clear">Clear cache</a>
+    <a role="button" class="menu-button" href="/panel/main">Return</a>
+
+{% endblock %}

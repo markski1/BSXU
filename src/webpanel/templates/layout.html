@@ -1,0 +1,15 @@
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}"/>
+    <title>{% block title %}{% endblock %} - BSXU</title>
+</head>
+<body>
+    <main>
+        {% block main %} {% endblock %}
+    </main>
+    <footer>
+        <p>Running BSXU by <a href="https://markski.ar">Markski</a></p>
+    </footer>
+</body>
+</html>
