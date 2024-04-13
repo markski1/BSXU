@@ -1,0 +1,32 @@
+{% extends "layout.html" %}
+{% block title %}Stats{% endblock %}
+
+{% block main %}
+
+    <h3>Stats per file</h3>
+    <p>Counted since BSXU was started. ({{ start_date }})</p>
+    {% if file_hits %}
+    <table style="width: 100%">
+        <thead style="margin-bottom: 0.5rem">
+            <tr>
+                <td>File</td>
+                <td>Hits</td>
+            </tr>
+        </thead>
+
+        <tbody>
+            {% for name, amount in file_hits.items() %}
+                <tr>
+                    <td>{{ name }}</td>
+                    <td>{{ amount }}</td>
+                </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+        <p>No hits recorded since BSXU was started.</p>
+    {% endif %}
+
+    <a role="button" class="menu-button" href="/panel/main">Return</a>
+
+{% endblock %}

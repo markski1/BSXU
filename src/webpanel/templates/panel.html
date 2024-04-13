@@ -1,12 +1,13 @@
 {% extends "layout.html" %}
-{% block title %}Login{% endblock %}
+{% block title %}Panel{% endblock %}
 
 {% block main %}
 
     <h3>Admin panel</h3>
     <ul>
         <li>Files in cache: {{ cache_amount }} ({{ cache_size }} Kb)</li>
-        <li>Hits last 24h: [TODO]</li>
+        <li>Hits since BSXU restarted: {{ total_hits }}</li>
+        <li>Running since: {{ start_date }}</li>
     </ul>
 
     <a role="button" class="menu-button" href="/panel/cache">See cached files</a>

@@ -6,6 +6,7 @@ from flask_login import login_required, login_user, logout_user, current_user
 
 from core.session import attempt_login, Session
 from core.config import cache_folder
+from core.stats import get_total_hits, start_date, get_all_file_hits
 
 panel_bp = Blueprint("panel", __name__, url_prefix="/panel")
 
@@ -45,7 +46,8 @@ def logout():
 def main_ui():
     file_list, total_size = cached_file_data()
     return render_template("panel.html",
-                           cache_amount=len(file_list), cache_size=f'{total_size:,}')
+                           cache_amount=len(file_list), cache_size=f'{total_size:,}',
+                           total_hits=get_total_hits(), start_date=start_date)
 
 
 @panel_bp.route("/cache")
@@ -58,7 +60,8 @@ def cache_files_ui():
 @panel_bp.route("/stats")
 @login_required
 def stats_ui():
-    return "Not yet implemented."
+    return render_template("stats.html",
+                           start_date=start_date, file_hits=get_all_file_hits())
 
 
 # Actions

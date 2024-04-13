@@ -5,6 +5,7 @@ from core.config import authkey, name_length, cache_folder, url_path, app
 from flask import send_file, request
 from werkzeug.utils import secure_filename
 
+from core.stats import count_hit
 from misc import generate_random_string
 from core.b2connect import b2_file_upload, b2_cache_file
 
@@ -45,11 +46,13 @@ def get_file(filename):
     # Check local cache
     filepath = str(os.path.join(cache_folder, filename))
     if os.path.isfile(filepath):
+        count_hit(os.path.basename(filepath))
         return send_file(filepath)
 
     # If not in cache, check B2
     filepath = b2_cache_file(filename)
     if filepath:
+        count_hit(os.path.basename(filepath))
         return send_file(filepath)
 
     return "File does not exist."
