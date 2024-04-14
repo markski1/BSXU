@@ -19,8 +19,9 @@ def upload_file():
     if 'fileupload' not in request.files:
         return "No file provided."
 
-    file = request.files['fileupload']
-    filename = secure_filename(file.filename)
+    uploaded_file = request.files['fileupload']
+    filename = secure_filename(uploaded_file.filename)
+    filename = filename.replace("/", "")
 
     extension = os.path.splitext(filename)[1]
     if extension:
@@ -44,8 +45,12 @@ def upload_file():
 
 @app.route("/<string:filename>")
 def get_file(filename):
+    # Sanitize
+    filename = secure_filename(filename)
+    filename = filename.replace("/", "")
+    # Cache path
+    filepath = os.path.join(cache_folder, filename)
     # Check local cache
-    filepath = str(os.path.join(cache_folder, filename))
     if os.path.isfile(filepath):
         count_hit(os.path.basename(filepath))
         return send_file(filepath)
