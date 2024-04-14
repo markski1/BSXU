@@ -22,10 +22,11 @@ def upload_file():
     file = request.files['fileupload']
     filename = secure_filename(file.filename)
 
-    if '.' in filename:
-        filename = f"{generate_random_string(name_length)}.{filename.split('.')[1]}"
+    extension = os.path.splitext(filename)[1]
+    if extension:
+        filename = f"{generate_random_string(name_length)}.{extension}"
     else:
-        return "Filename does not contain extension."
+        return "Filename must contain extension."
 
     filepath = os.path.join(cache_folder, filename)
 
