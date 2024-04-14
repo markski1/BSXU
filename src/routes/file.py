@@ -32,7 +32,11 @@ def upload_file():
     filepath = os.path.join(cache_folder, filename)
 
     # Save to immediate cache
-    file.save(filepath)
+    try:
+        uploaded_file.save(filepath)
+    except Exception as e:
+        print(f"Error saving file to cache: {e}")
+        return "Error caching file. Check console output for details."
 
     # Upload file to B2
     success = b2_file_upload(filepath)
@@ -61,4 +65,4 @@ def get_file(filename):
         count_hit(os.path.basename(filepath))
         return send_file(filepath)
 
-    return "File does not exist."
+    return "File does not exist.", 404
