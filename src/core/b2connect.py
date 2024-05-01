@@ -1,4 +1,4 @@
-from b2sdk.exception import *
+import b2sdk
 from b2sdk.v2 import *
 import os
 
@@ -35,7 +35,7 @@ def b2_cache_file(filename):
 
         return filepath
 
-    except FileNotPresent:
+    except b2sdk.exception.FileNotPresent:
         return False
 
     except FileNotFoundError:

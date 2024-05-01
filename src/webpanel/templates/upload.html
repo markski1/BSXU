@@ -1,0 +1,19 @@
+{% extends "layout.html" %}
+{% block title %}Cached files{% endblock %}
+
+{% block main %}
+
+    <h3>Admin panel</h3>
+    <p>Upload file</p>
+
+    <form action="panel/file-upload">
+        <label>File name: <input type="text" name="file-name" placeholder="Leave empty to randomly generate."></label>
+        <label>File: <input type="file" id="file" name="fileupload"></label>
+        <input type="submit" value="Upload">
+    </form>
+
+    <hr>
+
+    <a role="button" class="menu-button" href="/panel/main">Return</a>
+
+{% endblock %}
