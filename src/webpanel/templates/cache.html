@@ -30,7 +30,11 @@
 
     <p>Cache size: {{ total_size }} Kb</p>
 
-    <a role="button" class="menu-button" href="/panel/cache/clear">Clear cache</a>
+    {% if not use_b2_storage %}
+        <p style="color:red">Warning: B2 storage is disabled. The local cache is your only method of storage.</p>
+    {% endif %}
+
+    <a role="button" class="menu-button" href="/panel/cache/clear/standard">Clear cache</a>
     <a role="button" class="menu-button" href="/panel/main">Return</a>
 
 {% endblock %}

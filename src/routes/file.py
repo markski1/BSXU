@@ -1,6 +1,6 @@
 import os
 
-from core.config import authkey, name_length, cache_folder, url_path, app
+from core.config import authkey, name_length, cache_folder, url_path, app, use_b2_storage
 
 from flask import send_file, request
 from werkzeug.utils import secure_filename
@@ -38,11 +38,12 @@ def upload_file():
         print(f"Error saving file to cache: {e}")
         return "Error caching file. Check console output for details."
 
-    # Upload file to B2
-    success = b2_file_upload(filepath)
+    if use_b2_storage:
+        # Upload file to B2
+        success = b2_file_upload(filepath)
 
-    if not success:
-        return "Error uploading file. Check console output for details."
+        if not success:
+            return "Error uploading file. Check console output for details."
 
     return f"{url_path}{filename}"
 
@@ -59,10 +60,11 @@ def get_file(filename):
         count_hit(os.path.basename(filepath))
         return send_file(filepath)
 
-    # If not in cache, check B2
-    filepath = b2_cache_file(filename)
-    if filepath:
-        count_hit(os.path.basename(filepath))
-        return send_file(filepath)
+    if use_b2_storage:
+        # If not in cache, check B2
+        filepath = b2_cache_file(filename)
+        if filepath:
+            count_hit(os.path.basename(filepath))
+            return send_file(filepath)
 
     return "File does not exist.", 404

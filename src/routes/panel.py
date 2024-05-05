@@ -5,7 +5,7 @@ from flask import Blueprint, render_template, request, redirect
 from flask_login import login_required, login_user, logout_user, current_user
 
 from core.session import attempt_login, Session
-from core.config import cache_folder
+from core.config import cache_folder, use_b2_storage
 from core.stats import get_total_hits, start_date, get_all_file_hits
 
 panel_bp = Blueprint("panel", __name__, url_prefix="/panel")
@@ -54,7 +54,8 @@ def main_ui():
 @login_required
 def cache_files_ui():
     file_list, total_size = cached_file_data()
-    return render_template("cache.html", cached_files=file_list, total_size=f'{total_size:,}')
+    return render_template("cache.html", cached_files=file_list, total_size=f'{total_size:,}',
+                           use_b2_storage=use_b2_storage)
 
 
 @panel_bp.route("/stats")
@@ -67,20 +68,28 @@ def stats_ui():
 # Actions
 
 
-@panel_bp.route("/cache/clear")
+@panel_bp.route("/cache/clear/<string:confirmation>")
 @login_required
-def clear_cache():
-    for filename in os.listdir(cache_folder):
-        file_path = os.path.join(cache_folder, filename)
-        try:
-            if os.path.isfile(file_path) or os.path.islink(file_path):
-                os.unlink(file_path)
-            elif os.path.isdir(file_path):
-                shutil.rmtree(file_path)
-        except Exception as e:
-            return f'Failed to delete {file_path}. Reason: {e}', 500
+def clear_cache(confirmation):
+    if not use_b2_storage and "override" not in confirmation:
+        return """
+                    <p>Be advised: You do NOT have B2 storage enabled. The 'cache' is currently used as your main 
+                    and only method of storage.</p>
+                    <p>Doing this will delete ALL of your files.</p>
+                    <p><a href="/panel/cache/clear/override">Yes, delete all of my files.</a></p>
+               """
+    else:
+        for filename in os.listdir(cache_folder):
+            file_path = os.path.join(cache_folder, filename)
+            try:
+                if os.path.isfile(file_path) or os.path.islink(file_path):
+                    os.unlink(file_path)
+                elif os.path.isdir(file_path):
+                    shutil.rmtree(file_path)
+            except Exception as e:
+                return f'Failed to delete {file_path}. Reason: {e}', 500
 
-    return redirect('/panel/cache')
+        return redirect('/panel/cache')
 
 
 # Helpers
