@@ -32,7 +32,7 @@ def b2_file_upload(filepath):
 def b2_cache_file(filename):
     # First, check if cache should be cleared
     cache_size = get_size(cache_folder)
-    if (cache_size / 1024) / 1024 >= cache_max_size_mb:
+    if int((cache_size / 1024) / 1024) >= cache_max_size_mb:
         clear_cache(cache_folder)
 
     filepath = str(os.path.join(cache_folder, filename))

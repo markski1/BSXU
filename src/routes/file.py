@@ -25,7 +25,7 @@ def upload_file():
 
     extension = os.path.splitext(filename)[1]
     if extension:
-        filename = f"{generate_random_string(name_length)}.{extension}"
+        filename = f"{generate_random_string(name_length)}{extension}"
     else:
         return "Filename must contain extension."
 

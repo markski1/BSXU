@@ -19,7 +19,7 @@ b2_bucket_name = os.getenv('B2_BUCKET_NAME')
 app_host = os.getenv('APP_HOST')
 app_port = os.getenv('APP_PORT')
 app_debug = os.getenv('APP_DEBUG')
-cache_max_size_mb = os.getenv('CACHE_MAX_SIZE_MB')
+cache_max_size_mb = int(os.getenv('CACHE_MAX_SIZE_MB'))
 
 
 panel_enabled = os.getenv('PANEL_ENABLED') == 'true'
