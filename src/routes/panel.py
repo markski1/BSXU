@@ -68,7 +68,7 @@ def stats_ui():
 
 @panel_bp.route("/upload")
 @login_required
-def stats_ui():
+def upload_ui():
     return render_template("upload.html")
 
 
