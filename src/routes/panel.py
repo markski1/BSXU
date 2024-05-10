@@ -4,6 +4,7 @@ import shutil
 from flask import Blueprint, render_template, request, redirect
 from flask_login import login_required, login_user, logout_user, current_user
 
+from core import actions
 from core.session import attempt_login, Session
 from core.config import cache_folder, use_b2_storage
 from core.stats import get_total_hits, start_date, get_all_file_hits
@@ -65,7 +66,41 @@ def stats_ui():
                            start_date=start_date, file_hits=get_all_file_hits())
 
 
+@panel_bp.route("/upload")
+@login_required
+def stats_ui():
+    return render_template("upload.html")
+
+
 # Actions
+
+
+@panel_bp.post("/file-upload")
+@login_required
+def file_upload():
+    if 'fileupload' not in request.files:
+        return "No file provided.", 400
+
+    uploaded_file = request.files['fileupload']
+    file_name = request.form.get('file-name')
+
+    if file_name is not None and len(file_name) > 0:
+        success, ret = actions.upload_file(uploaded_file, file_name)
+    else:
+        success, ret = actions.upload_file(uploaded_file)
+
+    if success:
+        return render_template(
+            'result.html',
+            result_title="File uploaded",
+            result_outcome=f"The file has been uploaded: `{ret}`"
+        )
+    else:
+        return render_template(
+            'result.html',
+            result_title="Upload failed",
+            result_outcome=ret
+        )
 
 
 @panel_bp.route("/cache/clear/<string:confirmation>")

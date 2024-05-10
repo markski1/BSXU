@@ -1,13 +1,13 @@
 import os
 
-from core.config import authkey, name_length, cache_folder, url_path, app, use_b2_storage
+from core.config import authkey, cache_folder, url_path, app, use_b2_storage
 
 from flask import send_file, request
 from werkzeug.utils import secure_filename
 
 from core.stats import count_hit
-from misc import generate_random_string
-from core.b2connect import b2_file_upload, b2_cache_file
+from core import actions
+from core.b2connect import b2_cache_file
 
 
 @app.post("/upload")
@@ -20,33 +20,15 @@ def upload_file():
         return "No file provided."
 
     uploaded_file = request.files['fileupload']
-    filename = secure_filename(uploaded_file.filename)
-    filename = filename.replace("/", "")
 
-    extension = os.path.splitext(filename)[1]
-    if extension:
-        filename = f"{generate_random_string(name_length)}{extension}"
+    success, ret = actions.upload_file(uploaded_file)
+
+    # if succeeded, ret is a filename.
+    # if failed, ret is an error message.
+    if success:
+        return f"{url_path}{ret}"
     else:
-        return "Filename must contain extension."
-
-    filepath = os.path.join(cache_folder, filename)
-
-    # Save to immediate cache
-    try:
-        uploaded_file.save(filepath)
-    except Exception as e:
-        print(f"Error saving file to cache: {e}")
-        return "Error caching file. Check console output for details."
-
-    if use_b2_storage:
-        # Upload file to B2
-        success = b2_file_upload(filepath)
-
-        if not success:
-            return "Error uploading file. Check console output for details."
-
-    return f"{url_path}{filename}"
-
+        return ret, 500
 
 @app.route("/<string:filename>")
 def get_file(filename):
