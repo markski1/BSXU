@@ -8,6 +8,7 @@ Key differences:
 - Files are uploaded to a Backblaze B2 bucket.
 - Server is only used for 'caching' (fresh files are stored and served from the server, instead of exposing B2 urls and risking egress fees).
 - A lot more configurable.
+- In addition to ShareX, a method to use Flameshot is also provided.
 
 ### Setup
 
