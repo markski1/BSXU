@@ -6,7 +6,7 @@ from flask_login import login_required, login_user, logout_user, current_user
 
 from core import actions
 from core.session import attempt_login, Session
-from core.config import cache_folder, use_b2_storage
+from core.config import cache_folder, use_b2_storage, url_path
 from core.stats import get_total_hits, start_date, get_all_file_hits
 
 panel_bp = Blueprint("panel", __name__, url_prefix="/panel")
@@ -93,7 +93,7 @@ def file_upload():
         return render_template(
             'result.html',
             result_title="File uploaded",
-            result_outcome=f"The file has been uploaded: `{ret}`"
+            result_outcome=f"The file has been uploaded: `{url_path}{ret}`"
         )
     else:
         return render_template(

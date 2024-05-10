@@ -6,10 +6,10 @@
     <h3>Admin panel</h3>
     <p>Upload file</p>
 
-    <form action="panel/file-upload" method="POST">
-        <label>File name: <input type="text" name="file-name" placeholder="Leave empty to randomly generate. Do not include extension."></label>
-        <label>File: <input type="file" id="file" name="fileupload"></label>
-        <input type="submit" value="Upload">
+    <form action="/panel/file-upload" method="POST" enctype="multipart/form-data">
+        <label>File name: <input type="text" name="file-name" placeholder="Leave empty to randomly generate. Do not include extension."></label><br>
+        <label>File: <input type="file" id="fileupload" name="fileupload"></label><br>
+        <input type="submit" value="Upload"><br>
     </form>
 
     <hr>
