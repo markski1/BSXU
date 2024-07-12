@@ -38,6 +38,5 @@ def attempt_login(auth_key):
     return None
 
 
-
 class Session(UserMixin):
     ...
