@@ -5,8 +5,9 @@ BSXU is a continuation of [PSXU](https://github.com/markski1/PSXU), my previous 
 Key differences:
 
 - Implemented as a Flask application.
-- Files are uploaded to a Backblaze B2 bucket.
-- Server is only used for 'caching' (fresh files are stored and served from the server, instead of exposing B2 urls and risking egress fees).
+- Files are uploaded to a Backblaze B2 bucket (optional).
+- Server filesystem storage otherwise. In B2 mode, filesystem is a cache, to avoid B2 egress fees.
+- Web panel for manual uploading, stats, fetching links.
 - A lot more configurable.
 - In addition to ShareX, a method to use Flameshot is also provided.
 
@@ -19,7 +20,3 @@ You can follow [this guide](https://markski.ar/blog/bsxu-b2-hosting) in my blog.
 Find issue, don't want make change, open issue.
 
 Find issue, want make change, open PR.
-
-### TODO:
-
-- Web interface with file viewer, management, manual uploading and downloading.
