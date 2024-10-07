@@ -43,14 +43,7 @@ def b2_cache_file(filename):
 
         return filepath
 
-    except b2sdk.exception.FileNotPresent:
-        return False
-
-    except FileNotFoundError:
-        return False
-
-    except Exception as e:
-        print(f"Exception found when caching '{filename}': \n {e}")
+    except:
         return False
 
 

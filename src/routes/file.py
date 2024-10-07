@@ -30,6 +30,7 @@ def upload_file():
     else:
         return ret, 500
 
+
 @app.route("/<string:filename>")
 def get_file(filename):
     # Sanitize
