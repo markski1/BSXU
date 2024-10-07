@@ -56,7 +56,7 @@ def main_ui():
 def cache_files_ui():
     file_list, total_size = cached_file_data()
     return render_template("cache.html", cached_files=file_list, total_size=f'{total_size:,}',
-                           use_b2_storage=use_b2_storage)
+                           use_b2_storage=use_b2_storage, url_path=url_path)
 
 
 @panel_bp.route("/stats")
@@ -129,6 +129,8 @@ def clear_cache(confirmation):
 
 # Helpers
 
+image_extensions = [".jpg", ".jpeg", ".png", ".gif"]
+
 
 def cached_file_data():
     file_list = []
@@ -137,7 +139,14 @@ def cached_file_data():
         file_path = os.path.join(cache_folder, fname)
         if os.path.isfile(file_path):
             file_size_kb = os.path.getsize(file_path) / 1024
-            file_list.append({'name': fname, 'size': int(file_size_kb)})
+
+            file_list.append(
+                {
+                    'name': fname,
+                    'size': int(file_size_kb),
+                    'is_image': True if any(ext in fname for ext in image_extensions) else False
+                }
+            )
             total_size += file_size_kb
 
     return file_list, int(total_size)

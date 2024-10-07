@@ -7,11 +7,12 @@
     <p>Cached files</p>
 
     {% if cached_files %}
-        <table>
+        <table style="width: 100%">
             <thead>
                 <tr>
                     <td><b>Name</b></td>
                     <td><b>Size</b></td>
+                    <td><b>Preview</b></td>
                 </tr>
             </thead>
             <tbody>
@@ -19,6 +20,13 @@
                     <tr>
                         <td>{{ file['name'] }}</td>
                         <td>{{ file['size'] }} Kb</td>
+                        <td>
+                            {% if file['is_image'] %}
+                                <img src="{{ url_path }}/{{ file['name'] }}" style="max-width: 192px; max-height: 192px" alt="Image preview for {{ file['name'] }}">
+                            {% else %}
+                                Cannot preview
+                            {% endif %}
+                        </td>
                     </tr>
                 {% endfor %}
             </tbody>
