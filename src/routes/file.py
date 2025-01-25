@@ -34,10 +34,11 @@ def upload_file():
 @app.route("/<string:filename>")
 def get_file(filename):
     # Sanitize
-    filename = secure_filename(filename)
-    filename = filename.replace("/", "")
+    filename = secure_filename(filename).replace("/", "")
+
     # Cache path
     filepath = os.path.join(cache_folder, filename)
+
     # Check local cache
     if os.path.isfile(filepath):
         count_hit(os.path.basename(filepath))
@@ -49,5 +50,21 @@ def get_file(filename):
         if filepath:
             count_hit(os.path.basename(filepath))
             return send_file(filepath)
+
+    return "File does not exist.", 404
+
+
+# ONLY checks cache, DOES NOT count hit
+@app.route("/cache/<string:filename>")
+def get_cache_file(filename):
+    # Sanitize
+    filename = secure_filename(filename).replace("/", "")
+
+    # Cache path
+    filepath = os.path.join(cache_folder, filename)
+
+    # Check local cache
+    if os.path.isfile(filepath):
+        return send_file(filepath)
 
     return "File does not exist.", 404

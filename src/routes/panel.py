@@ -17,7 +17,7 @@ def login_prompt():
     if current_user.is_authenticated:
         return redirect("/panel/main")
     else:
-        return render_template("login.html")
+        return render_template("login.jinja2")
 
 
 @panel_bp.post("/login")
@@ -46,7 +46,7 @@ def logout():
 @login_required
 def main_ui():
     file_list, total_size = cached_file_data()
-    return render_template("panel.html",
+    return render_template("panel.jinja2",
                            cache_amount=len(file_list), cache_size=f'{total_size:,}',
                            total_hits=get_total_hits(), start_date=start_date)
 
@@ -55,21 +55,21 @@ def main_ui():
 @login_required
 def cache_files_ui():
     file_list, total_size = cached_file_data()
-    return render_template("cache.html", cached_files=file_list, total_size=f'{total_size:,}',
+    return render_template("cache.jinja2", cached_files=file_list, total_size=f'{total_size:,}',
                            use_b2_storage=use_b2_storage, url_path=url_path)
 
 
 @panel_bp.route("/stats")
 @login_required
 def stats_ui():
-    return render_template("stats.html",
+    return render_template("stats.jinja2",
                            start_date=start_date, file_hits=get_all_file_hits())
 
 
 @panel_bp.route("/upload")
 @login_required
 def upload_ui():
-    return render_template("upload.html")
+    return render_template("upload.jinja2")
 
 
 # Actions
@@ -91,13 +91,13 @@ def file_upload():
 
     if success:
         return render_template(
-            'result.html',
+            'result.jinja2',
             result_title="File uploaded",
             result_outcome=f"The file has been uploaded: `{url_path}{ret}`"
         )
     else:
         return render_template(
-            'result.html',
+            'result.jinja2',
             result_title="Upload failed",
             result_outcome=ret
         )

@@ -1,4 +1,4 @@
-{% extends "layout.html" %}
+{% extends "layout.jinja2" %}
 {% block title %}Cached files{% endblock %}
 
 {% block main %}
@@ -22,7 +22,7 @@
                         <td>{{ file['size'] }} Kb</td>
                         <td>
                             {% if file['is_image'] %}
-                                <img src="{{ url_path }}/{{ file['name'] }}" style="max-width: 192px; max-height: 192px" alt="Image preview for {{ file['name'] }}">
+                                <img src="{{ url_path }}cache/{{ file['name'] }}" style="max-width: 192px; max-height: 192px" alt="Image preview for {{ file['name'] }}">
                             {% else %}
                                 Cannot preview
                             {% endif %}

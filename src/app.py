@@ -1,6 +1,6 @@
 from core.config import app, app_host, app_port, app_debug, panel_enabled
 
-# Routes
+# Routes, "unused" but needs to be imported for routes to load.
 import routes.file
 
 from routes.panel import panel_bp
