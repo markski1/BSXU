@@ -1,10 +1,10 @@
 import shutil
 
-import b2sdk
 from b2sdk.v2 import *
 import os
 
 from core.config import cache_folder, use_b2_storage, b2_app_id, b2_app_key, b2_bucket_name, cache_max_size_mb
+from misc import wh_report
 
 if use_b2_storage:
     info = InMemoryAccountInfo()
@@ -25,7 +25,7 @@ def b2_file_upload(filepath):
 
         return True
     except Exception as e:
-        print(f"Exception found when uploading '{filename}': \n {e}")
+        wh_report("Error uploading file to B2.", e)
         return False
 
 
@@ -37,12 +37,13 @@ def b2_cache_file(filename):
 
     filepath = str(os.path.join(cache_folder, filename))
 
+    # An exception indicates the file does not exist.
+    # There is an API call to check for existance first, but it is a metered operation.
     try:
         file_download = b2_bucket.download_file_by_name(file_name=filename)
         file_download.save_to(filepath, 'wb')
 
         return filepath
-
     except:
         return False
 
@@ -65,9 +66,7 @@ def clear_cache(path):
         try:
             shutil.rmtree(filename)
         except Exception as e:
-            print(f"Exception found when attempting to clear the cache.")
-            print(f"File being deleted: {filename}")
-            print(f"Exception: {e}")
+            wh_report(f"Exception found when attempting to clear the cache. File being deleted: {filename}", e)
             break
 
-    print("Cache has been cleared.")
+    wh_report("Cache has been cleared.")

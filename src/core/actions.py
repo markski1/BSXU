@@ -3,7 +3,7 @@ import os
 from core.config import name_length, cache_folder, use_b2_storage
 from core.b2connect import b2_file_upload
 from werkzeug.utils import secure_filename
-from misc import generate_random_string
+from misc import generate_random_string, wh_report
 
 
 def upload_file(uploaded_file, custom_file_name=None):
@@ -25,14 +25,14 @@ def upload_file(uploaded_file, custom_file_name=None):
     try:
         uploaded_file.save(filepath)
     except Exception as e:
-        print(f"Error saving file to cache: {e}")
-        return False, "Error caching file. Check console output for details."
+        wh_report(f"Error saving file to cache.", e)
+        return False, "Error uploading file to server. Check console output for details."
 
     if use_b2_storage:
         # Upload file to B2
         success = b2_file_upload(filepath)
 
         if not success:
-            return False, "Error uploading file. Check console output for details."
+            return False, "Error uploading file to B2. Check console output for details."
 
     return True, filename

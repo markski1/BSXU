@@ -21,6 +21,9 @@ app_port = os.getenv('APP_PORT')
 app_debug = os.getenv('APP_DEBUG')
 cache_max_size_mb = int(os.getenv('CACHE_MAX_SIZE_MB'))
 
+discord_webhook = os.getenv('DISCORD_WEBHOOK')
+using_discord_wb = discord_webhook.lower() != "false"
+
 
 panel_enabled = os.getenv('PANEL_ENABLED') == 'true'
 use_b2_storage = os.getenv('USE_B2_STORAGE') == 'true'

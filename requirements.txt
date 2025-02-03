@@ -3,3 +3,4 @@ flask
 flask-login
 python-dotenv
 b2sdk
+requests~=2.31.0
