@@ -21,8 +21,9 @@ app_port = os.getenv('APP_PORT')
 app_debug = os.getenv('APP_DEBUG')
 cache_max_size_mb = int(os.getenv('CACHE_MAX_SIZE_MB'))
 
-discord_webhook = os.getenv('DISCORD_WEBHOOK')
-using_discord_wb = discord_webhook.lower() != "false"
+webhook_url = os.getenv('WEBHOOK_URL', 'false')
+using_webhook = webhook_url.lower() != "false"
+webhook_param = os.getenv('WEBHOOK_PARAM', 'content')
 
 
 panel_enabled = os.getenv('PANEL_ENABLED') == 'true'

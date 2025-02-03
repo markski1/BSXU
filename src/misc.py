@@ -4,7 +4,7 @@ import traceback
 
 import requests
 
-from core.config import discord_webhook, using_discord_wb
+from core.config import webhook_url, using_webhook
 
 
 def generate_random_string(length):
@@ -23,12 +23,12 @@ def wh_report(text, exception=None):
     else:
         exception_text = ""
 
-    if using_discord_wb:
-        requests.post(discord_webhook, json={
+    if using_webhook:
+        requests.post(webhook_url, json={
             'content': message
         })
         if exception:
-            requests.post(discord_webhook, json={
+            requests.post(webhook_url, json={
                 'content': exception_text
             })
 
