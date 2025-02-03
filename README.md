@@ -17,6 +17,6 @@ You can follow [this guide](https://markski.ar/blog/bsxu-b2-hosting) in my blog.
 
 ### Contributing
 
-Find issue, don't want make change, open issue.
+Find issue, don't want to make change, open issue.
 
-Find issue, want make change, open PR.
+Find issue, want to make change, open PR.

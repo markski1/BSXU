@@ -1,6 +1,6 @@
 import os
 
-from core.config import authkey, cache_folder, url_path, app, use_b2_storage
+from core.config import authkey, cache_folder, url_path, use_b2_storage
 
 from flask import send_file, request
 from werkzeug.utils import secure_filename
@@ -10,7 +10,7 @@ from core import actions
 from core.b2connect import b2_cache_file
 
 
-@app.post("/upload")
+# Route: /upload
 def upload_file():
     key = request.form.get('key', None)
     if not key or key != authkey:
@@ -31,7 +31,7 @@ def upload_file():
         return ret, 500
 
 
-@app.route("/<string:filename>")
+# Route: /filename
 def get_file(filename):
     # Sanitize
     filename = secure_filename(filename).replace("/", "")
@@ -55,7 +55,7 @@ def get_file(filename):
 
 
 # ONLY checks cache, DOES NOT count hit
-@app.route("/cache/<string:filename>")
+# Route: /cache/filename
 def get_cache_file(filename):
     # Sanitize
     filename = secure_filename(filename).replace("/", "")
