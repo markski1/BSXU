@@ -31,11 +31,11 @@ def wh_report(text, exception=None):
 
     if using_webhook:
         requests.post(webhook_url, json={
-            'content': message
+            webhook_param: message
         })
         if exception:
             requests.post(webhook_url, json={
-                'content': exception_text
+                webhook_param: exception_text
             })
 
     print(message)
