@@ -1,10 +1,15 @@
 import string
 import random
 import traceback
-
+import os
 import requests
+from dotenv import load_dotenv
 
-from core.config import webhook_url, using_webhook
+load_dotenv()
+
+webhook_url = os.getenv('WEBHOOK_URL', 'false')
+using_webhook = webhook_url.lower() != "false"
+webhook_param = os.getenv('WEBHOOK_PARAM', 'content')
 
 
 def generate_random_string(length):
@@ -19,7 +24,8 @@ def wh_report(text, exception=None):
         try:
             exception_text = f"{exception} \n ```{traceback.format_tb(exception.__traceback__)}```"
         except:
-            exception_text = f"Another exception was met trying to get a traceback for the original exception. \n ({exception})"
+            exception_text = (f"Another exception was met trying to get a traceback for the original exception. "
+                              f"\n ({exception})")
     else:
         exception_text = ""
 

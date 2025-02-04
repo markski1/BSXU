@@ -21,11 +21,6 @@ app_port = os.getenv('APP_PORT')
 app_debug = os.getenv('APP_DEBUG')
 cache_max_size_mb = int(os.getenv('CACHE_MAX_SIZE_MB'))
 
-webhook_url = os.getenv('WEBHOOK_URL', 'false')
-using_webhook = webhook_url.lower() != "false"
-webhook_param = os.getenv('WEBHOOK_PARAM', 'content')
-
-
 panel_enabled = os.getenv('PANEL_ENABLED') == 'true'
 use_b2_storage = os.getenv('USE_B2_STORAGE') == 'true'
 
