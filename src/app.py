@@ -1,6 +1,5 @@
 from core.config import app, app_host, app_port, app_debug, panel_enabled
 
-# Routes, "unused" but needs to be imported for routes to load.
 from misc import wh_report
 
 from routes.panel import panel_bp
@@ -13,7 +12,7 @@ def index():
 
 
 # Register root routes.
-app.add_url_rule("/upload", "upload_file", upload_file)
+app.add_url_rule("/upload", "upload_file", upload_file, methods=["POST"])
 app.add_url_rule("/<string:filename>", "get_file", get_file)
 app.add_url_rule("/cache/<string:filename>", "get_cache_file", get_cache_file)
 
