@@ -23,8 +23,6 @@ def upload_file():
 
     success, ret = actions.upload_file(uploaded_file)
 
-    # if succeeded, ret is a filename.
-    # if failed, ret is an error message.
     if success:
         return f"{url_path}{ret}"
     else:

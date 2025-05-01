@@ -12,13 +12,13 @@ using_webhook = webhook_url.lower() != "false"
 webhook_param = os.getenv('WEBHOOK_PARAM', 'content')
 
 
-def generate_random_string(length):
+def generate_random_string(length: int) -> str:
     length = int(length)
     alphanumeric_characters = string.ascii_letters + string.digits
     return ''.join(random.choice(alphanumeric_characters) for _ in range(length))
 
 
-def wh_report(text, exception=None):
+def wh_report(text: str, exception: Exception = None) -> None:
     message = "[BSXU] - " + text
     if exception:
         try:

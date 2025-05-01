@@ -1,4 +1,7 @@
 import os
+from typing import Optional
+
+from werkzeug.datastructures import FileStorage
 
 from core.config import name_length, cache_folder, use_b2_storage
 from core.b2connect import b2_file_upload
@@ -6,7 +9,14 @@ from werkzeug.utils import secure_filename
 from misc import generate_random_string, wh_report
 
 
-def upload_file(uploaded_file, custom_file_name=None):
+def upload_file(uploaded_file: FileStorage, custom_file_name: Optional[str] = None) -> tuple[bool, str]:
+    """
+    Upload a file to the default Backblaze B2 bucket.
+    :param uploaded_file: A 'FileStorage' object provided by Flask.
+    :param custom_file_name: Optionally, a custom name for the file.
+    :return: A boolean indicating success and a string. If successful, the string is a filename,
+        otherwise the string is an error message.
+    """
     filename = secure_filename(uploaded_file.filename)
     filename = filename.replace("/", "")
 
@@ -29,7 +39,7 @@ def upload_file(uploaded_file, custom_file_name=None):
         return False, "Error uploading file to server. Check console output for details."
 
     if use_b2_storage:
-        # Upload file to B2
+        # Upload the file to B2
         success = b2_file_upload(filepath)
 
         if not success:

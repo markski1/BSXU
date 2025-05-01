@@ -1,4 +1,5 @@
 import shutil
+from typing import Optional
 
 from b2sdk.v2 import *
 import os
@@ -13,7 +14,7 @@ if use_b2_storage:
     b2_bucket = b2_api.get_bucket_by_name(b2_bucket_name)
 
 
-def b2_file_upload(filepath):
+def b2_file_upload(filepath: str) -> bool:
     filename = str(os.path.basename(filepath))
 
     try:
@@ -29,8 +30,14 @@ def b2_file_upload(filepath):
         return False
 
 
-def b2_cache_file(filename):
-    # First, check if cache should be cleared
+def b2_cache_file(filename: str) -> Optional[str]:
+    """
+    Downloads a file from B2 into the cache.
+    :param filename: The name of the file to download.
+    :return: Filepath the file was downloaded to. None if there was a failure.
+    """
+
+    # First, check if the cache should be cleared
     cache_size = get_size(cache_folder)
     if int((cache_size / 1024) / 1024) >= cache_max_size_mb:
         clear_cache(cache_folder)
@@ -38,19 +45,19 @@ def b2_cache_file(filename):
     filepath = str(os.path.join(cache_folder, filename))
 
     # An exception indicates the file does not exist.
-    # There is an API call to check for existance first, but it is a metered operation.
+    # There is an API call to check for existence first, but it is a metered operation.
     try:
         file_download = b2_bucket.download_file_by_name(file_name=filename)
         file_download.save_to(filepath, 'wb')
 
         return filepath
     except:
-        return False
+        return None
 
 
-def get_size(path):
+def get_size(filepath: str) -> int:
     total_size = 0
-    for dirpath, dirnames, filenames in os.walk(path):
+    for dirpath, dirnames, filenames in os.walk(filepath):
         for f in filenames:
             fp = os.path.join(dirpath, f)
             # skip if symbolic link
@@ -60,7 +67,7 @@ def get_size(path):
     return total_size
 
 
-def clear_cache(path):
+def clear_cache(path: str) -> None:
     files = [os.path.join(cache_folder, filename) for filename in os.listdir(path)]
     for filename in files:
         try:

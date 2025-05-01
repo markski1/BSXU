@@ -25,11 +25,16 @@ def init_app(app):
             user_model = Session()
             user_model.id = load_id
             return user_model
-
-    return None
+        return None
 
 
 def attempt_login(auth_key):
+    """
+        Because this is a single-user system, we can just keep -the- session token in memory.
+        Yes, this means the sesh will expire whenever the application restarts, but humanity has survived worse.
+        There's OBVIOUSLY smarter ways to implement this. But for a webpanel that'll rarely, if at all, be used,
+        to go any deeper than this is a gross misplacement of time.
+    """
     global gen_token
     if auth_key == authkey:
         gen_token = generate_random_string(32)
@@ -39,4 +44,4 @@ def attempt_login(auth_key):
 
 
 class Session(UserMixin):
-    ...
+    pass
