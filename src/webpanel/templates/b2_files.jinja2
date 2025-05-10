@@ -1,0 +1,36 @@
+{% extends "layout.jinja2" %}
+{% block title %}B2 files{% endblock %}
+
+{% block main %}
+
+    <h3>Admin panel</h3>
+    <p>Files in B2</p>
+
+    {% if files %}
+        <table style="width: 100%">
+            <thead>
+                <tr>
+                    <td style="max-width: 100px"><b>Name</b></td>
+                    <td><b>Size</b></td>
+                </tr>
+            </thead>
+            <tbody>
+                {% for file in files %}
+                    <tr>
+                        <td><a href="/{{ file.file_name }}">{{ file.file_name }}</a></td>
+                        <td>{{ "{:,}".format(file.size // 1024) }} Kb</td>
+                        <td><a href="/panel/files/delete/{{ file.file_name }}" onclick="return confirm('Are you sure?')">Permanently delete</a></td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        <p>Total size: {{ "{:,}".format(total_size // 1024 // 1024) }} Mb</p>
+
+    {% else %}
+        <p>No files found, or failed to fetch them.</p>
+    {% endif %}
+
+    <a role="button" class="menu-button" href="/panel/main">Return</a>
+
+{% endblock %}

@@ -4,6 +4,7 @@
 {% block main %}
 
     <h3>Admin panel</h3>
+
     <ul>
         <li>Files in cache: {{ cache_amount }} ({{ cache_size }} Kb)</li>
         <li>Hits since BSXU restarted: {{ total_hits }}</li>
@@ -11,6 +12,9 @@
     </ul>
 
     <a role="button" class="menu-button" href="/panel/upload">Upload file</a>
+    {% if use_b2_storage %}
+        <a role="button" class="menu-button" href="/panel/files">See B2 files</a>
+    {% endif %}
     <a role="button" class="menu-button" href="/panel/cache">See cached files</a>
     <a role="button" class="menu-button" href="/panel/stats">See stats</a>
 

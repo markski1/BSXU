@@ -1,9 +1,10 @@
-import shutil
 from typing import Optional
 
+from b2sdk.v1 import B2File
 from b2sdk.v2 import *
 import os
 
+from core.cache import get_size, clear_cache
 from core.config import cache_folder, use_b2_storage, b2_app_id, b2_app_key, b2_bucket_name, cache_max_size_mb
 from misc import wh_report
 
@@ -55,25 +56,27 @@ def b2_cache_file(filename: str) -> Optional[str]:
         return None
 
 
-def get_size(filepath: str) -> int:
-    total_size = 0
-    for dirpath, dirnames, filenames in os.walk(filepath):
-        for f in filenames:
-            fp = os.path.join(dirpath, f)
-            # skip if symbolic link
-            if not os.path.islink(fp):
-                total_size += os.path.getsize(fp)
+def b2_get_files() -> list[FileVersion]:
+    b2_list_gen = b2_bucket.ls(
+        latest_only=True,
+        fetch_count=10000
+    )
 
-    return total_size
+    file_list = []
+    for file_info, _ in b2_list_gen:
+        file_list.append(file_info)
+
+    return file_list
 
 
-def clear_cache(path: str) -> None:
-    files = [os.path.join(cache_folder, filename) for filename in os.listdir(path)]
-    for filename in files:
-        try:
-            shutil.rmtree(filename)
-        except Exception as e:
-            wh_report(f"Exception found when attempting to clear the cache. File being deleted: {filename}", e)
-            break
+def b2_delete_file(filename: str) -> bool:
+    try:
+        result = b2_bucket.get_file_info_by_name(filename)
+        if not result:
+            return False
 
-    wh_report("Cache has been cleared.")
+        b2_bucket.delete_file_version(result.id_, filename)
+        return True
+    except Exception as e:
+        wh_report("Error deleting file from B2.", e)
+        return False

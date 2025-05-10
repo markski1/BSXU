@@ -5,6 +5,8 @@ from flask import Blueprint, render_template, request, redirect
 from flask_login import login_required, login_user, logout_user, current_user
 
 from core import actions
+from core.b2connect import b2_get_files, b2_delete_file
+from core.cache import cache_delete_file
 from core.session import attempt_login, Session
 from core.config import cache_folder, use_b2_storage, url_path
 from core.stats import get_total_hits, start_date, get_all_file_hits
@@ -46,9 +48,56 @@ def logout():
 @login_required
 def main_ui():
     file_list, total_size = cached_file_data()
-    return render_template("panel.jinja2",
+    return render_template("panel.jinja2", use_b2_storage=use_b2_storage,
                            cache_amount=len(file_list), cache_size=f'{total_size:,}',
                            total_hits=get_total_hits(), start_date=start_date)
+
+
+@panel_bp.route("/files")
+@login_required
+def files_ui():
+    if not use_b2_storage:
+        return render_template(
+            'result.jinja2',
+            result_title="B2 upload disabled.",
+            result_outcome=f"This endpoint is disabled because B2 storage is disabled."
+        )
+
+    b2_files = b2_get_files()
+
+    total_size = 0
+    for f in b2_files:
+        total_size += f.size
+
+    return render_template(
+        'b2_files.jinja2', files=b2_files, total_size=total_size
+    )
+
+
+@panel_bp.route("/files/delete/<string:filename>")
+@login_required
+def delete_file(filename):
+    if not use_b2_storage:
+        return render_template(
+            'result.jinja2',
+            result_title="B2 upload disabled.",
+            result_outcome=f"This endpoint is disabled because B2 storage is disabled."
+        )
+
+    success = b2_delete_file(filename)
+
+    if success:
+        cache_delete_file(filename)
+        return render_template(
+            'result.jinja2',
+            result_title="File deleted",
+            result_outcome=f"The file `{filename}` has been deleted."
+        )
+    else:
+        return render_template(
+            'result.jinja2',
+            result_title="File deletion failed",
+        )
 
 
 @panel_bp.route("/cache")
@@ -113,18 +162,9 @@ def clear_cache(confirmation):
                     <p>Doing this will delete ALL of your files.</p>
                     <p><a href="/panel/cache/clear/override">Yes, delete all of my files.</a></p>
                """
-    else:
-        for filename in os.listdir(cache_folder):
-            file_path = os.path.join(cache_folder, filename)
-            try:
-                if os.path.isfile(file_path) or os.path.islink(file_path):
-                    os.unlink(file_path)
-                elif os.path.isdir(file_path):
-                    shutil.rmtree(file_path)
-            except Exception as e:
-                return f'Failed to delete {file_path}. Reason: {e}', 500
 
-        return redirect('/panel/cache')
+    clear_cache()
+    return redirect('/panel/cache')
 
 
 # Helpers
