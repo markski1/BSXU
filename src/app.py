@@ -8,7 +8,7 @@ from routes.file import upload_file, get_file, get_cache_file
 
 @app.route("/")
 def index():
-    return "BSXU is running."
+    return "<h1>It works!</h1>"
 
 
 # Register root routes.

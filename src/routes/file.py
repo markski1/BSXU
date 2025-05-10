@@ -21,7 +21,8 @@ def upload_file():
 
     uploaded_file = request.files['fileupload']
 
-    success, ret = actions.upload_file(uploaded_file)
+    uploaded_file_noexif = actions.prune_metadata(uploaded_file)
+    success, ret = actions.upload_file(uploaded_file_noexif)
 
     if success:
         return f"{url_path}{ret}"

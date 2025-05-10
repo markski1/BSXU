@@ -1,6 +1,8 @@
-werkzeug~=2.3.7
-flask~=2.3.3
-flask-login~=0.6.3
-python-dotenv~=1.0.1
-b2sdk~=2.1.0
-requests~=2.31.0
+werkzeug
+flask
+flask-login
+python-dotenv
+b2sdk
+requests
+pillow
+pyperclip

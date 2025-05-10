@@ -1,12 +1,49 @@
+import io
 import os
 from typing import Optional
 
+from PIL import Image
 from werkzeug.datastructures import FileStorage
 
 from core.config import name_length, cache_folder, use_b2_storage
 from core.b2connect import b2_file_upload
 from werkzeug.utils import secure_filename
 from misc import generate_random_string, wh_report
+
+
+def prune_metadata(working_file: FileStorage):
+    """
+    Provided a FileStorage, if it is an image, return it without metadata.
+    :param working_file: A 'FileStorage' object provided by Flask.
+    :return: A 'FileStorage' object.
+    """
+    try:
+        # Not pretty, but the most reliable way to decide if something is an image
+        # really does seem to be giving it to Pillow and seeing if it blows up.
+        image = Image.open(working_file)
+
+        # We have an image, so, just clone it pixel by pixel, leaving anything else behind.
+        data = list(image.getdata())
+        clean_image = Image.new(image.mode, image.size)
+        clean_image.putdata(data)
+
+        # Save clean image to BytesIO object
+        output = io.BytesIO()
+        clean_image.save(output, format=image.format)
+        output.seek(0)
+
+        # We got a werkzeug FileStorage, so we return one of those too.
+        cleaned_file = FileStorage(
+            stream=output,
+            filename=working_file.filename,
+            content_type=working_file.content_type,
+            content_length=output.getbuffer().nbytes
+        )
+        return cleaned_file
+    except Exception:
+        # If not an image or error occurs, return the original file
+        working_file.seek(0)
+        return working_file
 
 
 def upload_file(uploaded_file: FileStorage, custom_file_name: Optional[str] = None) -> tuple[bool, str]:
