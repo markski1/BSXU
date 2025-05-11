@@ -6,7 +6,8 @@ Key differences:
 
 - Implemented as a Flask application.
 - Files are uploaded to a Backblaze B2 bucket (optional).
-- Server filesystem storage otherwise. In B2 mode, filesystem is a cache, to avoid B2 egress fees.
+- Removes EXIF from images.
+- Server filesystem storage otherwise. In B2 mode, the filesystem is used as a cache to avoid B2 egress fees.
 - Web panel for manual uploading, stats, fetching links.
 - A lot more configurable.
 - In addition to ShareX, a method to use Flameshot is also provided.

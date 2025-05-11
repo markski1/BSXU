@@ -22,9 +22,7 @@ def upload_file():
         return "No file provided."
 
     uploaded_file = request.files['fileupload']
-
-    uploaded_file_noexif = actions.prune_metadata(uploaded_file)
-    success, ret = actions.upload_file(uploaded_file_noexif)
+    success, ret = actions.upload_file(uploaded_file)
 
     if success:
         return f"{url_path}{ret}"

@@ -21,15 +21,8 @@ def prune_metadata(working_file: FileStorage):
         # Not pretty, but the most reliable way to decide if something is an image
         # really does seem to be giving it to Pillow and seeing if it blows up.
         image = Image.open(working_file)
-
-        # We have an image, so, just clone it pixel by pixel, leaving anything else behind.
-        data = list(image.getdata())
-        clean_image = Image.new(image.mode, image.size)
-        clean_image.putdata(data)
-
-        # Save clean image to BytesIO object
         output = io.BytesIO()
-        clean_image.save(output, format=image.format)
+        image.save(output, format=image.format)
         output.seek(0)
 
         # We got a werkzeug FileStorage, so we return one of those too.
@@ -68,9 +61,12 @@ def upload_file(uploaded_file: FileStorage, custom_file_name: Optional[str] = No
 
     filepath = os.path.join(cache_folder, filename)
 
+    # In case of being an image, try and prune metadata.
+    clean_file = prune_metadata(uploaded_file)
+
     # Save to immediate cache
     try:
-        uploaded_file.save(filepath)
+        clean_file.save(filepath)
     except Exception as e:
         wh_report(f"Error saving file to cache.", e)
         return False, "Error uploading file to server. Check console output for details."
