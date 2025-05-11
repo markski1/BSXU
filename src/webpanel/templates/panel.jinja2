@@ -6,7 +6,7 @@
     <h3>Admin panel</h3>
 
     <ul>
-        <li>Files in cache: {{ cache_amount }} ({{ cache_size }} Kb)</li>
+        <li>Files in cache: {{ cache_amount }} ({{ "{:,}".format(cache_size) }} Kb)</li>
         <li>Hits since BSXU restarted: {{ total_hits }}</li>
         <li>Running since: {{ start_date }}</li>
     </ul>

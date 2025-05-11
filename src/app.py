@@ -3,7 +3,7 @@ from core.config import app, app_host, app_port, app_debug, panel_enabled
 from misc import wh_report
 
 from routes.panel import panel_bp
-from routes.file import upload_file, get_file, get_cache_file
+from routes.file import upload_file, get_file, get_file_thumbnail
 
 
 @app.route("/")
@@ -14,7 +14,7 @@ def index():
 # Register root routes.
 app.add_url_rule("/upload", "upload_file", upload_file, methods=["POST"])
 app.add_url_rule("/<string:filename>", "get_file", get_file)
-app.add_url_rule("/cache/<string:filename>", "get_cache_file", get_cache_file)
+app.add_url_rule("/thumbnail/<string:filename>", "get_file_thumbnail", get_file_thumbnail)
 
 
 # If the panel is enabled in the envfile, register its blueprint.

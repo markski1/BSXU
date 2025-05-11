@@ -22,18 +22,19 @@
                         <td>{{ file['size'] }} Kb</td>
                         <td>
                             {% if file['is_image'] %}
-                                <img src="{{ url_path }}cache/{{ file['name'] }}" style="max-width: 192px; max-height: 192px" alt="Image preview for {{ file['name'] }}">
+                                <img src="{{ url_path }}thumbnail/{{ file['name'] }}" style="max-width: 192px; max-height: 192px" alt="Image preview for {{ file['name'] }}">
                             {% else %}
                                 Cannot preview
                             {% endif %}
                         </td>
+                        <td><a href="/panel/cache/delete/{{ file['name'] }}" onclick="return confirm('Are you sure?')">Delete</a></td>
                     </tr>
                 {% endfor %}
             </tbody>
         </table>
 
     {% else %}
-        <p>No files in cache.</p>
+        <p>No files in the cache.</p>
     {% endif %}
 
     <p>Cache size: {{ total_size }} Kb</p>

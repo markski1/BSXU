@@ -1,4 +1,7 @@
+import io
 import os
+
+from PIL import Image
 
 from core.config import authkey, cache_folder, url_path, use_b2_storage
 
@@ -10,7 +13,6 @@ from core import actions
 from core.b2connect import b2_cache_file
 
 
-# Route: /upload
 def upload_file():
     key = request.form.get('key', None)
     if not key or key != authkey:
@@ -30,12 +32,8 @@ def upload_file():
         return ret, 500
 
 
-# Route: /filename
 def get_file(filename):
-    # Sanitize
     filename = secure_filename(filename).replace("/", "")
-
-    # Cache path
     filepath = os.path.join(cache_folder, filename)
 
     # Check local cache
@@ -53,17 +51,23 @@ def get_file(filename):
     return "File does not exist.", 404
 
 
-# ONLY checks cache, DOES NOT count hit
-# Route: /cache/filename
-def get_cache_file(filename):
-    # Sanitize
+def get_file_thumbnail(filename):
     filename = secure_filename(filename).replace("/", "")
-
-    # Cache path
     filepath = os.path.join(cache_folder, filename)
 
-    # Check local cache
+    # ONLY check local cache
     if os.path.isfile(filepath):
-        return send_file(filepath)
+        print("OK!")
+        try:
+            # If an image, attempt to indeed make a thumbnail.
+            img = Image.open(filepath)
+            img.thumbnail((192, 192))
+            result = io.BytesIO()
+            img.save(result, format=img.format)
+            result.seek(0)
+            return send_file(result, download_name=filename)
+        except Exception as e:
+            print(e)
+            return send_file(filepath)
 
     return "File does not exist.", 404

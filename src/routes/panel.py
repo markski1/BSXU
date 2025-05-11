@@ -1,5 +1,4 @@
 import os
-import shutil
 
 from flask import Blueprint, render_template, request, redirect
 from flask_login import login_required, login_user, logout_user, current_user
@@ -49,7 +48,7 @@ def logout():
 def main_ui():
     file_list, total_size = cached_file_data()
     return render_template("panel.jinja2", use_b2_storage=use_b2_storage,
-                           cache_amount=len(file_list), cache_size=f'{total_size:,}',
+                           cache_amount=len(file_list), cache_size=total_size,
                            total_hits=get_total_hits(), start_date=start_date)
 
 
@@ -106,6 +105,17 @@ def cache_files_ui():
     file_list, total_size = cached_file_data()
     return render_template("cache.jinja2", cached_files=file_list, total_size=f'{total_size:,}',
                            use_b2_storage=use_b2_storage, url_path=url_path)
+
+
+@panel_bp.route("/cache/delete/<string:filename>")
+@login_required
+def delete_cache_file(filename):
+    cache_delete_file(filename)
+    return render_template(
+        'result.jinja2',
+        result_title="File deleted fron cache",
+        result_outcome=f"The file `{filename}` has been deleted from cache."
+    )
 
 
 @panel_bp.route("/stats")

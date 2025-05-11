@@ -31,9 +31,9 @@ def init_app(app):
 def attempt_login(auth_key):
     """
         Because this is a single-user system, we can just keep -the- session token in memory.
-        Yes, this means the sesh will expire whenever the application restarts, but humanity has survived worse.
-        There's OBVIOUSLY smarter ways to implement this. But for a webpanel that'll rarely, if at all, be used,
-        to go any deeper than this is a gross misplacement of time.
+        Yes, this means the sesh will expire whenever the application restarts. It's fine.
+        I'd rather not have to deal with a database for this webpanel.
+        If in the future something else requires sqlite, I'll revisit this.
     """
     global gen_token
     if auth_key == authkey:

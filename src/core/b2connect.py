@@ -1,6 +1,5 @@
 from typing import Optional
 
-from b2sdk.v1 import B2File
 from b2sdk.v2 import *
 import os
 
