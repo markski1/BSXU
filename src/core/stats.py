@@ -21,5 +21,5 @@ def get_file_hits(filename: str) -> int:
     return file_hits.get(filename, 0)
 
 
-def get_all_file_hits() -> int:
+def get_all_file_hits() -> dict:
     return file_hits

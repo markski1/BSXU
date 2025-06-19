@@ -1,3 +1,5 @@
+from typing import Optional
+
 from flask_login import (
     LoginManager,
     UserMixin
@@ -20,15 +22,15 @@ def init_app(app):
     login_manager.session_protection = "strong"
 
     @login_manager.user_loader
-    def user_loader(load_id):
-        if load_id == gen_token:
+    def user_loader(loaded_token: str) -> Optional[Session]:
+        if loaded_token == gen_token:
             user_model = Session()
-            user_model.id = load_id
+            user_model.id = loaded_token
             return user_model
         return None
 
 
-def attempt_login(auth_key):
+def attempt_login(auth_key: str) -> Optional[str]:
     """
         Because this is a single-user system, we can just keep -the- session token in memory.
         Yes, this means the sesh will expire whenever the application restarts. It's fine.

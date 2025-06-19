@@ -11,7 +11,7 @@ from werkzeug.utils import secure_filename
 from misc import generate_random_string, wh_report
 
 
-def prune_metadata(working_file: FileStorage):
+def prune_metadata(working_file: FileStorage) -> FileStorage:
     """
     Provided a FileStorage, if it is an image, return it without metadata.
     :param working_file: A 'FileStorage' object provided by Flask.
