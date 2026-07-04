@@ -1,0 +1,19 @@
+[project]
+name = "bsxu"
+version = "0.1.0"
+description = "B2 ShareX uploader"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "b2sdk",
+    "flask",
+    "flask-login",
+    "pillow",
+    "pyperclip",
+    "python-dotenv",
+    "requests",
+    "werkzeug",
+]
+
+[tool.uv]
+package = false
