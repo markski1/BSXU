@@ -18,13 +18,18 @@ def get_size(filepath: str) -> int:
 
 
 def clear_cache(path: str) -> None:
-    files = [os.path.join(cache_folder, filename) for filename in os.listdir(path)]
-    for filename in files:
+    for filename in os.listdir(path):
+        target_path = os.path.join(path, filename)
         try:
-            shutil.rmtree(filename)
+            if os.path.isdir(target_path) and not os.path.islink(target_path):
+                shutil.rmtree(target_path)
+            else:
+                os.remove(target_path)
         except Exception as e:
-            wh_report(f"Exception found when attempting to clear the cache. File being deleted: {filename}", e)
-            break
+            wh_report(
+                f"Exception found when attempting to clear the cache. File being deleted: {target_path}",
+                e,
+            )
 
     wh_report("Cache has been cleared.")
 
@@ -35,5 +40,8 @@ def cache_delete_file(filename) -> None:
     try:
         os.remove(cache_filename)
     except Exception as e:
-        wh_report(f"Exception found when attempting to delete a file from the cache. "
-                  f"File being deleted: {cache_filename}", e)
+        wh_report(
+            f"Exception found when attempting to delete a file from the cache. "
+            f"File being deleted: {cache_filename}",
+            e,
+        )

@@ -1,33 +1,63 @@
 import os
+
 from dotenv import load_dotenv
 from flask import Flask
+
 from core import session
 
 load_dotenv()
 
-authkey = os.getenv('AUTH_KEY')
-url_path = os.getenv('URL_PATH')
-name_length = os.getenv('NAME_LENGTH')
 
-cache_folder = os.getenv('CACHE_FOLDER')
+def _get_required_env(name: str) -> str:
+    value = os.getenv(name)
+    if value is None or value == "":
+        raise RuntimeError(f"Missing required environment variable: {name}")
+    return value
+
+
+def _get_required_int(name: str) -> int:
+    value = _get_required_env(name)
+    try:
+        return int(value)
+    except ValueError as exc:
+        raise RuntimeError(f"Environment variable {name} must be an integer.") from exc
+
+
+def _get_bool(name: str, default: bool = False) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.lower() == "true"
+
+
+authkey = _get_required_env("AUTH_KEY")
+url_path = _get_required_env("URL_PATH")
+name_length = _get_required_int("NAME_LENGTH")
+
+cache_folder = _get_required_env("CACHE_FOLDER")
 os.makedirs(cache_folder, exist_ok=True)
 
-b2_app_id = os.getenv('B2_KEY_ID')
-b2_app_key = os.getenv('B2_APP_KEY')
-b2_bucket_name = os.getenv('B2_BUCKET_NAME')
+app_host = os.getenv("APP_HOST", "0.0.0.0")
+app_port = _get_required_int("APP_PORT")
+app_debug = _get_bool("APP_DEBUG")
+cache_max_size_mb = _get_required_int("CACHE_MAX_SIZE_MB")
 
-app_host = os.getenv('APP_HOST')
-app_port = os.getenv('APP_PORT')
-app_debug = os.getenv('APP_DEBUG')
-cache_max_size_mb = int(os.getenv('CACHE_MAX_SIZE_MB'))
+panel_enabled = _get_bool("PANEL_ENABLED")
+use_b2_storage = _get_bool("USE_B2_STORAGE")
 
-panel_enabled = os.getenv('PANEL_ENABLED') == 'true'
-use_b2_storage = os.getenv('USE_B2_STORAGE') == 'true'
+b2_app_id = _get_required_env("B2_KEY_ID") if use_b2_storage else None
+b2_app_key = _get_required_env("B2_APP_KEY") if use_b2_storage else None
+b2_bucket_name = _get_required_env("B2_BUCKET_NAME") if use_b2_storage else None
 
-app = Flask(__name__,
-            static_folder="../webpanel/static",
-            template_folder="../webpanel/templates")
+app = Flask(
+    __name__,
+    static_folder="../webpanel/static",
+    template_folder="../webpanel/templates",
+)
+
+if panel_enabled:
+    app.config["SECRET_KEY"] = _get_required_env("SECRET_KEY")
+else:
+    app.config["SECRET_KEY"] = os.getenv("SECRET_KEY")
 
 session.init_app(app)
-
-app.config['SECRET_KEY'] = os.getenv('SECRET_KEY')
