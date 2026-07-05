@@ -55,17 +55,14 @@ def get_file_thumbnail(filename):
 
     # ONLY check local cache
     if os.path.isfile(filepath):
-        print("OK!")
         try:
-            # If an image, attempt to indeed make a thumbnail.
             img = Image.open(filepath)
             img.thumbnail((192, 192))
             result = io.BytesIO()
             img.save(result, format=img.format)
             result.seek(0)
             return send_file(result, download_name=filename)
-        except Exception as e:
-            print(e)
+        except Exception:
             return send_file(filepath)
 
     return "File does not exist.", 404

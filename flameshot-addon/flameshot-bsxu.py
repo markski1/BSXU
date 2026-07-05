@@ -18,7 +18,7 @@ if __name__ == "__main__":
     r = post(
         config['url'],
         data={'key': config['key']},
-        files={'fileupload': io.BytesIO(data)}
+        files={'fileupload': ('screenshot.png', io.BytesIO(data), 'image/png')}
     )
     if r.status_code == 200:
         pyperclip.copy(r.text)

@@ -53,7 +53,7 @@ def upload_file(uploaded_file: FileStorage, custom_file_name: Optional[str] = No
     extension = os.path.splitext(filename)[1]
     if extension:
         if custom_file_name:
-            filename = custom_file_name + extension
+            filename = secure_filename(custom_file_name) + extension
         else:
             filename = generate_random_string(name_length) + extension
     else:
