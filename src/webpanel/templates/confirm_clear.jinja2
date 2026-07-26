@@ -1,0 +1,17 @@
+{% extends "layout.jinja2" %}
+{% block title %}Confirm cache deletion{% endblock %}
+
+{% block main %}
+
+    <h3>Delete all files</h3>
+    <p>You do not have B2 storage enabled. The cache is your only storage.</p>
+    <p>Continuing will permanently delete all uploaded files.</p>
+
+    <form action="/panel/cache/clear" method="POST">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="confirmation" value="override">
+        <button type="submit">Delete all files</button>
+    </form>
+    <a role="button" class="menu-button" href="/panel/cache">Cancel</a>
+
+{% endblock %}

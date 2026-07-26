@@ -19,7 +19,12 @@
                     <tr>
                         <td><a href="/{{ file.file_name }}">{{ file.file_name }}</a></td>
                         <td>{{ "{:,}".format(file.size // 1024) }} Kb</td>
-                        <td><a href="/panel/files/delete/{{ file.file_name }}" onclick="return confirm('Are you sure?')">Permanently delete</a></td>
+                        <td>
+                            <form action="{{ url_for('panel.delete_file', filename=file.file_name) }}" method="POST" onsubmit="return confirm('Are you sure?')">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <button type="submit">Permanently delete</button>
+                            </form>
+                        </td>
                     </tr>
                 {% endfor %}
             </tbody>

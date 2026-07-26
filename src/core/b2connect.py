@@ -18,12 +18,7 @@ def b2_file_upload(filepath: str) -> bool:
     filename = str(os.path.basename(filepath))
 
     try:
-        with open(filepath, 'rb') as file:
-            b2_bucket.upload_bytes(
-                file_name=filename,
-                data_bytes=file.read()
-            )
-
+        b2_bucket.upload_local_file(local_file=filepath, file_name=filename)
         return True
     except Exception as e:
         wh_report("Error uploading file to B2.", e)

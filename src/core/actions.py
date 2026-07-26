@@ -5,7 +5,14 @@ from typing import Optional
 from PIL import Image
 from werkzeug.datastructures import FileStorage
 
-from core.config import name_length, cache_folder, use_b2_storage
+from core.cache import get_size
+from core.config import (
+    cache_folder,
+    cache_max_size_mb,
+    max_upload_size_mb,
+    name_length,
+    use_b2_storage,
+)
 from core.b2connect import b2_file_upload
 from werkzeug.utils import secure_filename
 from misc import generate_random_string, wh_report
@@ -63,6 +70,18 @@ def upload_file(uploaded_file: FileStorage, custom_file_name: Optional[str] = No
 
     # In case of being an image, try and prune metadata.
     clean_file = prune_metadata(uploaded_file)
+
+    clean_file.stream.seek(0, os.SEEK_END)
+    file_size = clean_file.stream.tell()
+    clean_file.stream.seek(0)
+
+    if file_size > max_upload_size_mb * 1024 * 1024:
+        return False, f"File exceeds the {max_upload_size_mb} MB upload limit."
+
+    existing_size = os.path.getsize(filepath) if os.path.isfile(filepath) else 0
+    projected_cache_size = get_size(cache_folder) - existing_size + file_size
+    if projected_cache_size > cache_max_size_mb * 1024 * 1024:
+        return False, "File would exceed the configured cache size limit."
 
     # Save to immediate cache
     try:

@@ -7,6 +7,7 @@
     <p>Upload file</p>
 
     <form action="/panel/file-upload" method="POST" enctype="multipart/form-data">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <label>File name: <input type="text" name="file-name" placeholder="Leave empty to randomly generate. Do not include extension."></label><br>
         <label>File: <input type="file" id="fileupload" name="fileupload"></label><br>
         <input type="submit" value="Upload"><br>

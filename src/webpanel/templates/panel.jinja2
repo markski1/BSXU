@@ -18,6 +18,9 @@
     <a role="button" class="menu-button" href="/panel/cache">See cached files</a>
     <a role="button" class="menu-button" href="/panel/stats">See stats</a>
 
-    <p><a href="/panel/logout">Logout</a></p>
+    <form action="/panel/logout" method="POST">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit">Logout</button>
+    </form>
 
 {% endblock %}

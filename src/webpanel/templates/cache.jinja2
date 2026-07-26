@@ -27,7 +27,12 @@
                                 Cannot preview
                             {% endif %}
                         </td>
-                        <td><a href="/panel/cache/delete/{{ file['name'] }}" onclick="return confirm('Are you sure?')">Delete</a></td>
+                        <td>
+                            <form action="{{ url_for('panel.delete_cache_file', filename=file['name']) }}" method="POST" onsubmit="return confirm('Are you sure?')">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <button type="submit">Delete</button>
+                            </form>
+                        </td>
                     </tr>
                 {% endfor %}
             </tbody>
@@ -43,7 +48,11 @@
         <p style="color:red">Warning: B2 storage is disabled. The local cache is your only method of storage.</p>
     {% endif %}
 
-    <a role="button" class="menu-button" href="/panel/cache/clear/standard">Clear cache</a>
+    <form action="/panel/cache/clear" method="POST" onsubmit="return confirm('Are you sure?')">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="confirmation" value="standard">
+        <button type="submit">Clear cache</button>
+    </form>
     <a role="button" class="menu-button" href="/panel/main">Return</a>
 
 {% endblock %}

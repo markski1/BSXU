@@ -1,6 +1,7 @@
 import os
+import secrets
 
-from flask import Blueprint, redirect, render_template, request
+from flask import Blueprint, abort, redirect, render_template, request, session
 from flask_login import current_user, login_required, login_user, logout_user
 
 from core import actions
@@ -12,6 +13,30 @@ from core.session import Session, attempt_login
 from core.stats import get_all_file_hits, get_total_hits, start_date
 
 panel_bp = Blueprint("panel", __name__, url_prefix="/panel")
+
+
+def get_csrf_token():
+    token = session.get("_csrf_token")
+    if token is None:
+        token = secrets.token_urlsafe(32)
+        session["_csrf_token"] = token
+    return token
+
+
+@panel_bp.context_processor
+def inject_csrf_token():
+    return {"csrf_token": get_csrf_token}
+
+
+@panel_bp.before_request
+def validate_csrf_token():
+    if request.method != "POST":
+        return
+
+    expected_token = session.get("_csrf_token", "")
+    submitted_token = request.form.get("csrf_token", "")
+    if not expected_token or not secrets.compare_digest(expected_token, submitted_token):
+        abort(400, description="Invalid CSRF token.")
 
 
 @panel_bp.route("/")
@@ -32,12 +57,13 @@ def login():
         user_model = Session()
         user_model.id = result
         login_user(user_model)
+        session.pop("_csrf_token", None)
         return redirect("/panel/")
     else:
         return "Invalid auth key."
 
 
-@panel_bp.route("/logout")
+@panel_bp.post("/logout")
 @login_required
 def logout():
     logout_user()
@@ -77,7 +103,7 @@ def files_ui():
     return render_template("b2_files.jinja2", files=b2_files, total_size=total_size)
 
 
-@panel_bp.route("/files/delete/<string:filename>")
+@panel_bp.post("/files/delete/<string:filename>")
 @login_required
 def delete_file(filename):
     if not use_b2_storage:
@@ -116,7 +142,7 @@ def cache_files_ui():
     )
 
 
-@panel_bp.route("/cache/delete/<string:filename>")
+@panel_bp.post("/cache/delete/<string:filename>")
 @login_required
 def delete_cache_file(filename):
     cache_delete_file(filename)
@@ -170,16 +196,12 @@ def file_upload():
         )
 
 
-@panel_bp.route("/cache/clear/<string:confirmation>")
+@panel_bp.post("/cache/clear")
 @login_required
-def clear_cache_route(confirmation):
-    if not use_b2_storage and "override" not in confirmation:
-        return """
-                    <p>Be advised: You do NOT have B2 storage enabled. The 'cache' is currently used as your main
-                    and only method of storage.</p>
-                    <p>Doing this will delete ALL of your files.</p>
-                    <p><a href="/panel/cache/clear/override">Yes, delete all of my files.</a></p>
-               """
+def clear_cache_route():
+    confirmation = request.form.get("confirmation", "")
+    if not use_b2_storage and confirmation != "override":
+        return render_template("confirm_clear.jinja2")
 
     clear_cache_folder(cache_folder)
     return redirect("/panel/cache")
