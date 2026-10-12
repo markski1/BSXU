@@ -49,9 +49,11 @@ name_length = _get_required_int("NAME_LENGTH")
 cache_folder = _get_required_env("CACHE_FOLDER")
 os.makedirs(cache_folder, exist_ok=True)
 
-app_host = os.getenv("APP_HOST", "0.0.0.0")
+app_host = os.getenv("APP_HOST", "127.0.0.1")
 app_port = _get_required_int("APP_PORT")
 app_debug = _get_bool("APP_DEBUG")
+if app_debug and app_host not in {"127.0.0.1", "::1", "localhost"}:
+    raise RuntimeError("APP_DEBUG requires a loopback APP_HOST.")
 cache_max_size_mb = _get_positive_int("CACHE_MAX_SIZE_MB")
 max_upload_size_mb = _get_positive_int(
     "MAX_UPLOAD_SIZE_MB", default=cache_max_size_mb
@@ -69,6 +71,7 @@ app = Flask(
     static_folder="../webpanel/static",
     template_folder="../webpanel/templates",
 )
+app.jinja_env.autoescape = True
 
 if panel_enabled:
     app.config["SECRET_KEY"] = _get_required_env("SECRET_KEY")
