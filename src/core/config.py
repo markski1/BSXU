@@ -3,7 +3,7 @@ import os
 from dotenv import load_dotenv
 from flask import Flask
 
-from core import session
+from core import session, state
 
 load_dotenv()
 
@@ -44,7 +44,7 @@ def _get_bool(name: str, default: bool = False) -> bool:
 
 authkey = _get_required_env("AUTH_KEY")
 url_path = _get_required_env("URL_PATH")
-name_length = _get_required_int("NAME_LENGTH")
+name_length = _get_positive_int("NAME_LENGTH", default=12)
 
 cache_folder = _get_required_env("CACHE_FOLDER")
 os.makedirs(cache_folder, exist_ok=True)
@@ -80,5 +80,8 @@ else:
 
 app.config["MAX_CONTENT_LENGTH"] = (max_upload_size_mb + 1) * 1024 * 1024
 app.config["MAX_FORM_PARTS"] = 20
+app.config["CACHE_FOLDER"] = cache_folder
+app.config["STATE_FOLDER"] = os.getenv("STATE_FOLDER", app.instance_path)
 
+state.init_app(app)
 session.init_app(app)

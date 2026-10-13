@@ -6,10 +6,10 @@ from flask_login import current_user, login_required, login_user, logout_user
 
 from core import actions
 from core.b2connect import b2_delete_file, b2_get_files
-from core.cache import cache_delete_file
+from core.cache import cache_delete_file, cache_filepath
 from core.cache import clear_cache as clear_cache_folder
 from core.config import cache_folder, url_path, use_b2_storage
-from core.session import Session, attempt_login
+from core.session import Session, attempt_login, revoke_session
 from core.stats import get_all_file_hits, get_total_hits, start_date
 
 panel_bp = Blueprint("panel", __name__, url_prefix="/panel")
@@ -66,7 +66,9 @@ def login():
 @panel_bp.post("/logout")
 @login_required
 def logout():
+    revoke_session(current_user.get_id())
     logout_user()
+    session.clear()
     return redirect("../")
 
 
@@ -106,6 +108,10 @@ def files_ui():
 @panel_bp.post("/files/delete/<string:filename>")
 @login_required
 def delete_file(filename):
+    try:
+        cache_filepath(filename)
+    except ValueError:
+        abort(400, description="Invalid filename.")
     if not use_b2_storage:
         return render_template(
             "result.jinja2",
@@ -116,7 +122,6 @@ def delete_file(filename):
     success = b2_delete_file(filename)
 
     if success:
-        cache_delete_file(filename)
         return render_template(
             "result.jinja2",
             result_title="File deleted",
@@ -145,10 +150,17 @@ def cache_files_ui():
 @panel_bp.post("/cache/delete/<string:filename>")
 @login_required
 def delete_cache_file(filename):
-    cache_delete_file(filename)
+    try:
+        success = cache_delete_file(filename)
+    except ValueError:
+        abort(400, description="Invalid filename.")
+    if not success:
+        return render_template(
+            "result.jinja2", result_title="File deletion failed"
+        ), 404
     return render_template(
         "result.jinja2",
-        result_title="File deleted fron cache",
+        result_title="File deleted from cache",
         result_outcome=f"The file `{filename}` has been deleted from cache.",
     )
 

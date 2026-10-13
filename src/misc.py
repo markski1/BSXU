@@ -35,9 +35,12 @@ def wh_report(text: str, exception: Exception | None = None) -> None:
         exception_text = ""
 
     if using_webhook:
-        requests.post(webhook_url, json={webhook_param: message})
-        if exception:
-            requests.post(webhook_url, json={webhook_param: exception_text})
+        try:
+            requests.post(webhook_url, json={webhook_param: message}, timeout=(3.05, 5))
+            if exception:
+                requests.post(webhook_url, json={webhook_param: exception_text}, timeout=(3.05, 5))
+        except requests.RequestException as webhook_error:
+            print(f"[BSXU] - Webhook notification failed: {webhook_error}")
 
     print(message)
     if exception:
