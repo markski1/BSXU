@@ -41,9 +41,6 @@ def staged_file():
     if staging.is_symlink():
         raise ValueError("The staging directory must not be a symbolic link.")
     staging.mkdir(exist_ok=True)
-    for leftover in staging.glob("*.part"):
-        if leftover.is_file() and not leftover.is_symlink():
-            leftover.unlink()
     descriptor, filename = tempfile.mkstemp(dir=staging, suffix=".part")
     os.close(descriptor)
     target = Path(filename)
@@ -93,6 +90,7 @@ def clear_cache(path: str) -> None:
     root = Path(cache_folder).resolve()
     if Path(path).resolve() != root:
         raise ValueError("Only the configured cache can be cleared.")
+    errors = []
     with storage_transaction() as connection:
         for target in root.iterdir():
             if target.is_dir() and not target.is_symlink():
@@ -105,7 +103,9 @@ def clear_cache(path: str) -> None:
                         (target.name,),
                     )
             except OSError as exception:
-                wh_report("Error clearing a cached file.", exception)
+                errors.append(exception)
+    for exception in errors:
+        wh_report("Error clearing a cached file.", exception)
     wh_report("Cache has been cleared.")
 
 
@@ -122,5 +122,6 @@ def cache_delete_file(filename: str) -> bool:
         except FileNotFoundError:
             return False
         except OSError as exception:
-            wh_report("Error deleting a cached file.", exception)
-            return False
+            error = exception
+    wh_report("Error deleting a cached file.", error)
+    return False

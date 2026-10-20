@@ -1,11 +1,12 @@
 from typing import Optional
+from contextlib import closing
 
 from b2sdk.v2 import B2Api, FileVersion, InMemoryAccountInfo
 from b2sdk.v2.exception import FileNotPresent
 import os
 
 from core.cache import cache_filepath, has_cache_capacity, make_cache_room, staged_file
-from core.state import storage_transaction
+from core.state import connect, file_lock, storage_transaction
 from core.config import use_b2_storage, b2_app_id, b2_app_key, b2_bucket_name
 from misc import wh_report
 
@@ -58,30 +59,33 @@ def b2_cache_file(filename: str) -> Optional[str]:
     file_download = None
     try:
         filepath = cache_filepath(filename)
-        with storage_transaction() as connection:
-            deleted = connection.execute(
-                "SELECT deleted FROM uploaded_names WHERE filename = ?", (filename,)
-            ).fetchone()
+        with file_lock(filename):
+            with closing(connect("storage.sqlite3")) as connection:
+                deleted = connection.execute(
+                    "SELECT deleted FROM uploaded_names WHERE filename = ?", (filename,)
+                ).fetchone()
             if deleted and deleted[0]:
                 return None
             if filepath.is_file():
                 return str(filepath)
             file_download = b2_bucket.download_file_by_name(file_name=filename)
             file_size = file_download.download_version.content_length
-            if file_size < 0 or not has_cache_capacity(file_size, connection, True):
-                return None
+            with closing(connect("storage.sqlite3")) as connection:
+                if file_size < 0 or not has_cache_capacity(file_size, connection, True):
+                    return None
             with staged_file() as temporary_path:
                 with temporary_path.open("wb") as stream:
                     writer = LimitedWriter(stream, file_size)
                     file_download.save(writer, allow_seeking=False)
                     if writer.bytes_written != file_size:
                         raise ValueError("Incomplete B2 download.")
-                make_cache_room(file_size, connection, True)
-                os.replace(temporary_path, filepath)
-                connection.execute(
-                    "INSERT INTO uploaded_names (filename, backed_up) VALUES (?, 1) "
-                    "ON CONFLICT(filename) DO UPDATE SET backed_up = 1", (filename,)
-                )
+                with storage_transaction() as connection:
+                    make_cache_room(file_size, connection, True)
+                    os.replace(temporary_path, filepath)
+                    connection.execute(
+                        "INSERT INTO uploaded_names (filename, backed_up) VALUES (?, 1) "
+                        "ON CONFLICT(filename) DO UPDATE SET backed_up = 1", (filename,)
+                    )
             return str(filepath)
     except FileNotPresent:
         return None
@@ -109,20 +113,24 @@ def b2_get_files() -> list[FileVersion]:
 def b2_delete_file(filename: str) -> bool:
     try:
         filepath = cache_filepath(filename)
-        with storage_transaction() as connection:
+        cache_error = None
+        with file_lock(filename):
             versions = list(b2_bucket.list_file_versions(filename))
             if not versions:
                 return False
             for version in reversed(versions):
                 b2_bucket.delete_file_version(version.id_, filename)
-            connection.execute(
-                "INSERT INTO uploaded_names (filename, backed_up, deleted) VALUES (?, 1, 1) "
-                "ON CONFLICT(filename) DO UPDATE SET deleted = 1", (filename,)
-            )
-            try:
-                filepath.unlink(missing_ok=True)
-            except OSError as exception:
-                wh_report("Error removing the deleted file from cache.", exception)
+            with storage_transaction() as connection:
+                connection.execute(
+                    "INSERT INTO uploaded_names (filename, backed_up, deleted) VALUES (?, 1, 1) "
+                    "ON CONFLICT(filename) DO UPDATE SET deleted = 1", (filename,)
+                )
+                try:
+                    filepath.unlink(missing_ok=True)
+                except OSError as exception:
+                    cache_error = exception
+        if cache_error is not None:
+            wh_report("Error removing the deleted file from cache.", cache_error)
         return True
     except Exception as e:
         wh_report("Error deleting file from B2.", e)

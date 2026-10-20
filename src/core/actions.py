@@ -12,7 +12,7 @@ from core.config import (
     use_b2_storage,
 )
 from core.b2connect import b2_file_exists, b2_file_upload
-from core.state import storage_transaction
+from core.state import file_lock, storage_transaction
 from werkzeug.utils import secure_filename
 from misc import generate_random_string, wh_report
 
@@ -45,6 +45,23 @@ def prune_metadata(working_file: FileStorage) -> FileStorage:
         return working_file
 
 
+def reserve_filename(filename, file_size):
+    filepath = cache_filepath(filename)
+    with storage_transaction() as connection:
+        reserved = connection.execute(
+            "SELECT 1 FROM uploaded_names WHERE filename = ?", (filename,)
+        ).fetchone()
+        if reserved or os.path.lexists(filepath):
+            return None
+        if not has_cache_capacity(file_size, connection, use_b2_storage):
+            raise ValueError("File would exceed the configured cache size limit.")
+        connection.execute(
+            "INSERT INTO uploaded_names (filename, backed_up, deleted) VALUES (?, 0, 1)",
+            (filename,),
+        )
+    return filepath
+
+
 def upload_file(uploaded_file: FileStorage, custom_file_name: Optional[str] = None) -> tuple[bool, str]:
     """
     Upload a file to the default Backblaze B2 bucket.
@@ -74,36 +91,46 @@ def upload_file(uploaded_file: FileStorage, custom_file_name: Optional[str] = No
         return False, f"File exceeds the {max_upload_size_mb} MB upload limit."
 
     try:
-        with storage_transaction() as connection:
+        with staged_file() as temporary_path:
+            clean_file.save(temporary_path)
             for _ in range(10):
                 filename = (custom_name or generate_random_string(name_length)) + extension
-                filepath = cache_filepath(filename)
-                reserved = connection.execute(
-                    "SELECT 1 FROM uploaded_names WHERE filename = ?", (filename,)
-                ).fetchone()
-                exists = reserved or os.path.lexists(filepath)
-                if not exists and use_b2_storage:
-                    exists = b2_file_exists(filename)
-                if not exists:
-                    break
-                if custom_name:
-                    return False, "Filename already exists or was previously used."
-            else:
-                return False, "Unable to generate an unused filename."
+                with file_lock(filename):
+                    filepath = reserve_filename(filename, file_size)
+                    if filepath is not None and use_b2_storage:
+                        try:
+                            exists_in_b2 = b2_file_exists(filename)
+                        except Exception:
+                            with storage_transaction() as connection:
+                                connection.execute(
+                                    "DELETE FROM uploaded_names WHERE filename = ?", (filename,)
+                                )
+                            raise
+                        if exists_in_b2:
+                            with storage_transaction() as connection:
+                                connection.execute(
+                                    "UPDATE uploaded_names SET backed_up = 1, deleted = 0 "
+                                    "WHERE filename = ?", (filename,),
+                                )
+                            filepath = None
+                    if filepath is None:
+                        if custom_name:
+                            return False, "Filename already exists or was previously used."
+                        continue
 
-            if not has_cache_capacity(file_size, connection, use_b2_storage):
-                return False, "File would exceed the configured cache size limit."
-            with staged_file() as temporary_path:
-                clean_file.save(temporary_path)
-                if use_b2_storage and not b2_file_upload(str(temporary_path), filename):
-                    return False, "Error uploading file to B2. Check console output for details."
-                make_cache_room(file_size, connection, use_b2_storage)
-                os.replace(temporary_path, filepath)
-                connection.execute(
-                    "INSERT INTO uploaded_names (filename, backed_up) VALUES (?, ?)",
-                    (filename, int(use_b2_storage)),
-                )
-        return True, filename
+                    if use_b2_storage and not b2_file_upload(str(temporary_path), filename):
+                        return False, "Error uploading file to B2. Check console output for details."
+                    with storage_transaction() as connection:
+                        make_cache_room(file_size, connection, use_b2_storage)
+                        os.replace(temporary_path, filepath)
+                        connection.execute(
+                            "UPDATE uploaded_names SET backed_up = ?, deleted = 0 WHERE filename = ?",
+                            (int(use_b2_storage), filename),
+                        )
+                    return True, filename
+        return False, "Unable to generate an unused filename."
+    except ValueError as exception:
+        return False, str(exception)
     except Exception as exception:
         wh_report("Error uploading file.", exception)
         return False, "Error uploading file to server. Check console output for details."
