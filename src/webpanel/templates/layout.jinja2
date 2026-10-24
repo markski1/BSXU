@@ -1,15 +1,37 @@
+<!doctype html>
 <html lang="en">
 <head>
     <meta charset="utf-8">
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}"/>
-    <title>{% block title %}{% endblock %} - BSXU</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <script src="{{ url_for('static', filename='panel.js') }}" defer></script>
+    <title>{% block title %}Files{% endblock %} · BSXU</title>
 </head>
 <body>
-    <main>
-        {% block main %} {% endblock %}
-    </main>
-    <footer>
-        <p>Running BSXU by <a href="https://markski.ar">Markski</a></p>
-    </footer>
+<a class="skip-link" href="#content">Skip to content</a>
+<header class="site-header">
+    <a class="brand" href="{{ url_for('panel.main_ui') }}">BSXU</a>
+    {% if current_user.is_authenticated %}
+    <nav aria-label="Main navigation">
+        <a href="{{ url_for('panel.main_ui') }}"{% if request.endpoint == 'panel.main_ui' %} aria-current="page"{% endif %}>Overview</a>
+        <a href="{{ url_for('panel.files_ui') }}"{% if request.endpoint == 'panel.files_ui' %} aria-current="page"{% endif %}>Files</a>
+        <a href="{{ url_for('panel.upload_ui') }}"{% if request.endpoint == 'panel.upload_ui' %} aria-current="page"{% endif %}>Upload</a>
+        <a href="{{ url_for('panel.stats_ui') }}"{% if request.endpoint == 'panel.stats_ui' %} aria-current="page"{% endif %}>Statistics</a>
+        <a href="{{ url_for('panel.keys_ui') }}"{% if request.endpoint == 'panel.keys_ui' %} aria-current="page"{% endif %}>Device keys</a>
+    </nav>
+    <form action="{{ url_for('panel.logout') }}" method="post">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="quiet" type="submit">Sign out</button>
+    </form>
+    {% endif %}
+</header>
+<main id="content" tabindex="-1">
+    {% for category, message in get_flashed_messages(with_categories=true) %}
+    <p class="notice {{ category }}" role="status">{{ message }}</p>
+    {% endfor %}
+    {% block main %}{% endblock %}
+</main>
+<footer>BSXU · Files remain accessible to anyone with their link until it expires or is revoked.</footer>
+<div class="toast" role="status" aria-live="polite" hidden></div>
 </body>
 </html>

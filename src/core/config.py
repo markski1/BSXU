@@ -1,87 +1,103 @@
 import os
+from dataclasses import dataclass
+from pathlib import Path
+from urllib.parse import urlsplit
 
 from dotenv import load_dotenv
-from flask import Flask
-
-from core import session, state
-
-load_dotenv()
+from flask import current_app
 
 
-def _get_required_env(name: str) -> str:
-    value = os.getenv(name)
-    if value is None or value == "":
-        raise RuntimeError(f"Missing required environment variable: {name}")
-    return value
+@dataclass(frozen=True)
+class Settings:
+    auth_key: str
+    admin_key: str
+    secret_key: str
+    url_path: str
+    cache_folder: Path
+    state_folder: Path
+    use_b2_storage: bool
+    panel_enabled: bool
+    cookie_secure: bool
+    name_length: int
+    cache_max_size_mb: int
+    max_upload_size_mb: int
+    staging_max_size_mb: int
+    min_free_disk_mb: int
+    image_max_pixels: int
+    image_max_frames: int
+    image_timeout: int
+    b2_key_id: str
+    b2_app_key: str
+    b2_bucket_name: str
+    webhook_url: str
+    webhook_param: str
+
+    @classmethod
+    def load(cls, overrides=None):
+        if overrides is None:
+            load_dotenv(Path(__file__).resolve().parents[1] / ".env")
+        values = dict(os.environ)
+        values.update(overrides or {})
+
+        def text(name, default=""):
+            return str(values.get(name, default)).strip()
+
+        def positive(name, default, minimum=1):
+            try:
+                value = int(values.get(name, default))
+            except (ValueError, TypeError) as exception:
+                raise RuntimeError(f"{name} must be an integer.") from exception
+            if value < minimum:
+                raise RuntimeError(f"{name} must be at least {minimum}.")
+            return value
+
+        def boolean(name, default):
+            value = text(name, str(default)).lower()
+            if value not in {"true", "false"}:
+                raise RuntimeError(f"{name} must be true or false.")
+            return value == "true"
+
+        def secret(name, required=True):
+            value = text(name)
+            if required and (len(value) < 32 or value.lower().startswith("changeme")):
+                raise RuntimeError(f"Set {name} to a unique random secret of at least 32 characters.")
+            return value
+
+        panel = boolean("PANEL_ENABLED", True)
+        if text("LEGACY_UPLOAD_MAX_MB", "0") not in {"", "0"}:
+            raise RuntimeError("Form-key uploads are no longer supported. Use an authentication header.")
+        upload_key = secret("AUTH_KEY")
+        admin_key = secret("ADMIN_KEY", panel)
+        if panel and admin_key == upload_key:
+            raise RuntimeError("ADMIN_KEY must be different from AUTH_KEY.")
+        url = text("URL_PATH")
+        parts = urlsplit(url)
+        if parts.scheme not in {"http", "https"} or not parts.netloc or parts.query or parts.fragment or parts.username:
+            raise RuntimeError("URL_PATH must be an http(s) URL without credentials, query or fragment.")
+        if parts.path not in {"", "/"}:
+            raise RuntimeError("URL_PATH must use the root of a dedicated host.")
+        cache = Path(text("CACHE_FOLDER", "./cache")).resolve()
+        state = Path(text("STATE_FOLDER", "./instance")).resolve()
+        if state.is_relative_to(cache) or cache.is_relative_to(state):
+            raise RuntimeError("STATE_FOLDER and CACHE_FOLDER must be separate directories.")
+        upload_limit = positive("MAX_UPLOAD_SIZE_MB", 128)
+        b2 = boolean("USE_B2_STORAGE", False)
+        b2_values = [text(name) for name in ("B2_KEY_ID", "B2_APP_KEY", "B2_BUCKET_NAME")]
+        if b2 and not all(b2_values):
+            raise RuntimeError("B2_KEY_ID, B2_APP_KEY and B2_BUCKET_NAME are required for B2.")
+        webhook = text("WEBHOOK_URL", "false")
+        if webhook != "false" and urlsplit(webhook).scheme != "https":
+            raise RuntimeError("WEBHOOK_URL must be https or false.")
+        return cls(
+            upload_key, admin_key, secret("SECRET_KEY", panel), url.rstrip("/") + "/",
+            cache, state, b2, panel, boolean("SESSION_COOKIE_SECURE", True),
+            positive("NAME_LENGTH", 12, 12), positive("CACHE_MAX_SIZE_MB", 2048),
+            upload_limit, positive("STAGING_MAX_SIZE_MB", upload_limit * 8 + 8),
+            positive("MIN_FREE_DISK_MB", 64, 0), positive("IMAGE_MAX_PIXELS", 40_000_000),
+            positive("IMAGE_MAX_FRAMES", 100), positive("IMAGE_TIMEOUT_SECONDS", 20),
+            *b2_values, webhook, text("WEBHOOK_PARAM", "content"),
+        )
 
 
-def _get_required_int(name: str) -> int:
-    value = _get_required_env(name)
-    try:
-        return int(value)
-    except ValueError as exc:
-        raise RuntimeError(f"Environment variable {name} must be an integer.") from exc
-
-
-def _get_positive_int(name: str, default: int | None = None) -> int:
-    value = os.getenv(name)
-    if value is None and default is not None:
-        result = default
-    else:
-        result = _get_required_int(name)
-
-    if result <= 0:
-        raise RuntimeError(f"Environment variable {name} must be greater than zero.")
-    return result
-
-
-def _get_bool(name: str, default: bool = False) -> bool:
-    value = os.getenv(name)
-    if value is None:
-        return default
-    return value.lower() == "true"
-
-
-authkey = _get_required_env("AUTH_KEY")
-url_path = _get_required_env("URL_PATH")
-name_length = _get_positive_int("NAME_LENGTH", default=12)
-
-cache_folder = _get_required_env("CACHE_FOLDER")
-os.makedirs(cache_folder, exist_ok=True)
-
-app_host = os.getenv("APP_HOST", "127.0.0.1")
-app_port = _get_required_int("APP_PORT")
-app_debug = _get_bool("APP_DEBUG")
-if app_debug and app_host not in {"127.0.0.1", "::1", "localhost"}:
-    raise RuntimeError("APP_DEBUG requires a loopback APP_HOST.")
-cache_max_size_mb = _get_positive_int("CACHE_MAX_SIZE_MB")
-max_upload_size_mb = _get_positive_int(
-    "MAX_UPLOAD_SIZE_MB", default=cache_max_size_mb
-)
-
-panel_enabled = _get_bool("PANEL_ENABLED")
-use_b2_storage = _get_bool("USE_B2_STORAGE")
-
-b2_app_id = _get_required_env("B2_KEY_ID") if use_b2_storage else None
-b2_app_key = _get_required_env("B2_APP_KEY") if use_b2_storage else None
-b2_bucket_name = _get_required_env("B2_BUCKET_NAME") if use_b2_storage else None
-
-app = Flask(
-    __name__,
-    static_folder="../webpanel/static",
-    template_folder="../webpanel/templates",
-)
-app.jinja_env.autoescape = True
-
-if panel_enabled:
-    app.config["SECRET_KEY"] = _get_required_env("SECRET_KEY")
-else:
-    app.config["SECRET_KEY"] = os.getenv("SECRET_KEY")
-
-app.config["MAX_CONTENT_LENGTH"] = (max_upload_size_mb + 1) * 1024 * 1024
-app.config["MAX_FORM_PARTS"] = 20
-app.config["CACHE_FOLDER"] = cache_folder
-app.config["STATE_FOLDER"] = os.getenv("STATE_FOLDER", app.instance_path)
-
-state.init_app(app)
-session.init_app(app)
+def settings() -> Settings:
+    return current_app.extensions["settings"]

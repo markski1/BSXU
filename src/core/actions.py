@@ -1,139 +1,160 @@
-import io
+from contextlib import closing
+from dataclasses import dataclass
+import hashlib
 import os
-from typing import Optional
+from pathlib import Path
+import time
 
-from PIL import Image
-from werkzeug.datastructures import FileStorage
-
-from core.cache import cache_filepath, has_cache_capacity, make_cache_room, staged_file
-from core.config import (
-    max_upload_size_mb,
-    name_length,
-    use_b2_storage,
-)
-from core.b2connect import b2_file_exists, b2_file_upload
-from core.state import file_lock, storage_transaction
-from werkzeug.utils import secure_filename
+from core import b2connect
+from core.cache import cache_filepath, publish_cache, publish_thumbnail, staged_file
+from core.config import settings
+from core.controls import forget_missing, lease
+from core.errors import AppError, BackendError
+from core.media import IMAGE_EXTENSIONS, process_image
+from core.state import connect, file_lock, transaction
+from core.uploads import UPLOAD_CONCURRENCY
 from misc import generate_random_string, wh_report
+from werkzeug.utils import secure_filename
 
 
-def prune_metadata(working_file: FileStorage) -> FileStorage:
-    """
-    Provided a FileStorage, if it is an image, return it without metadata.
-    :param working_file: A 'FileStorage' object provided by Flask.
-    :return: A 'FileStorage' object.
-    """
-    try:
-        # Not pretty, but the most reliable way to decide if something is an image
-        # really does seem to be giving it to Pillow and seeing if it blows up.
-        image = Image.open(working_file)
-        output = io.BytesIO()
-        image.save(output, format=image.format)
-        output.seek(0)
-
-        # We got a werkzeug FileStorage, so we return one of those too.
-        cleaned_file = FileStorage(
-            stream=output,
-            filename=working_file.filename,
-            content_type=working_file.content_type,
-            content_length=output.getbuffer().nbytes
-        )
-        return cleaned_file
-    except Exception:
-        # If not an image or error occurs, return the original file
-        working_file.seek(0)
-        return working_file
+@dataclass(frozen=True)
+class UploadResult:
+    filename: str
+    size: int
 
 
-def reserve_filename(filename, file_size):
-    filepath = cache_filepath(filename)
-    with storage_transaction() as connection:
-        reserved = connection.execute(
-            "SELECT 1 FROM uploaded_names WHERE filename = ?", (filename,)
-        ).fetchone()
-        if reserved or os.path.lexists(filepath):
-            return None
-        if not has_cache_capacity(file_size, connection, use_b2_storage):
-            raise ValueError("File would exceed the configured cache size limit.")
-        connection.execute(
-            "INSERT INTO uploaded_names (filename, backed_up, deleted) VALUES (?, 0, 1)",
-            (filename,),
-        )
-    return filepath
+def copy_bounded(stream, destination, maximum):
+    size = 0
+    with destination.open("wb") as output:
+        while chunk := stream.read(64 * 1024):
+            size += len(chunk)
+            if size > maximum:
+                raise AppError("File exceeds the upload limit.", 413)
+            output.write(chunk)
+    return size
 
 
-def upload_file(uploaded_file: FileStorage, custom_file_name: Optional[str] = None) -> tuple[bool, str]:
-    """
-    Upload a file to the default Backblaze B2 bucket.
-    :param uploaded_file: A 'FileStorage' object provided by Flask.
-    :param custom_file_name: Optionally, a custom name for the file.
-    :return: A boolean indicating success and a string. If successful, the string is a filename,
-        otherwise the string is an error message.
-    """
-    filename = secure_filename(uploaded_file.filename or "")
-    extension = os.path.splitext(filename)[1]
+def recover_name(filename, row, digest):
+    if row["status"] not in {"pending", "failed"}:
+        raise AppError("Filename already exists or was previously used.", 409)
+    if settings().use_b2_storage:
+        remote = b2connect.b2_file_info(filename)
+        if remote:
+            matching = remote.file_info.get("bsxu_sha256") == digest
+            with transaction() as connection:
+                connection.execute(
+                    "UPDATE uploaded_names SET status = 'available', deleted = 0, backed_up = 1, size = ? WHERE filename = ?",
+                    (remote.size, filename),
+                )
+            if matching:
+                forget_missing(filename)
+                return UploadResult(filename, remote.size)
+            raise AppError("An earlier upload used this filename. Its link has been recovered.", 409)
+    target = cache_filepath(filename)
+    if target.is_file():
+        with target.open("rb") as stream:
+            local_digest = hashlib.file_digest(stream, "sha256").hexdigest()
+        with transaction() as connection:
+            connection.execute("UPDATE uploaded_names SET status = 'available', deleted = 0, cached = 1 WHERE filename = ?", (filename,))
+        if local_digest == digest:
+            return UploadResult(filename, target.stat().st_size)
+        raise AppError("An earlier upload used this filename.", 409)
+    with transaction() as connection:
+        connection.execute("DELETE FROM uploaded_names WHERE filename = ? AND status IN ('pending', 'failed')", (filename,))
+    return None
+
+
+def upload_file(uploaded_file, custom_file_name=None, expiry_hours=None):
+    config = settings()
+    original_name = secure_filename(uploaded_file.filename or "")
+    extension = Path(original_name).suffix.lower()
     if not extension:
-        return False, "Filename must contain extension."
-    custom_name = secure_filename(custom_file_name) if custom_file_name else None
-    if custom_file_name and not custom_name:
-        return False, "Invalid custom filename."
-
-    # In case of being an image, try and prune metadata.
-    clean_file = prune_metadata(uploaded_file)
-
-    clean_file.stream.seek(0, os.SEEK_END)
-    file_size = clean_file.stream.tell()
-    clean_file.stream.seek(0)
-
-    if file_size > max_upload_size_mb * 1024 * 1024:
-        if clean_file is not uploaded_file:
-            clean_file.close()
-        return False, f"File exceeds the {max_upload_size_mb} MB upload limit."
-
-    try:
-        with staged_file() as temporary_path:
-            clean_file.save(temporary_path)
-            for _ in range(10):
-                filename = (custom_name or generate_random_string(name_length)) + extension
-                with file_lock(filename):
-                    filepath = reserve_filename(filename, file_size)
-                    if filepath is not None and use_b2_storage:
-                        try:
-                            exists_in_b2 = b2_file_exists(filename)
-                        except Exception:
-                            with storage_transaction() as connection:
-                                connection.execute(
-                                    "DELETE FROM uploaded_names WHERE filename = ?", (filename,)
-                                )
-                            raise
-                        if exists_in_b2:
-                            with storage_transaction() as connection:
-                                connection.execute(
-                                    "UPDATE uploaded_names SET backed_up = 1, deleted = 0 "
-                                    "WHERE filename = ?", (filename,),
-                                )
-                            filepath = None
-                    if filepath is None:
-                        if custom_name:
-                            return False, "Filename already exists or was previously used."
+        raise AppError("Filename must contain an extension.")
+    custom = secure_filename(custom_file_name or "")
+    if custom_file_name and (not custom or len(custom) > 150):
+        raise AppError("Use a shorter filename containing letters, numbers, spaces, dots, dashes or underscores.")
+    expires = None
+    if expiry_hours:
+        try:
+            hours = int(expiry_hours)
+        except (ValueError, TypeError) as exception:
+            raise AppError("Expiry must be a whole number of hours.") from exception
+        if not 1 <= hours <= 8760:
+            raise AppError("Expiry must be between 1 and 8760 hours.")
+        expires = time.time() + hours * 3600
+    maximum = config.max_upload_size_mb * 1024 * 1024
+    with lease("uploads", UPLOAD_CONCURRENCY), staged_file(maximum * 3) as temporary:
+        size = copy_bounded(uploaded_file.stream, temporary, maximum)
+        if not size:
+            raise AppError("The selected file is empty.")
+        thumbnail = None
+        if extension in IMAGE_EXTENSIONS:
+            temporary, thumbnail = process_image(temporary, extension)
+            size = temporary.stat().st_size
+        with temporary.open("rb") as stream:
+            digest = hashlib.file_digest(stream, "sha256").hexdigest()
+        for _ in range(10):
+            filename = (custom or generate_random_string(config.name_length)) + extension
+            with file_lock(filename):
+                with closing(connect()) as connection:
+                    row = connection.execute("SELECT * FROM uploaded_names WHERE filename = ?", (filename,)).fetchone()
+                if row:
+                    if custom:
+                        recovered = recover_name(filename, row, digest)
+                        if recovered:
+                            return recovered
+                    else:
                         continue
+                if os.path.lexists(cache_filepath(filename)):
+                    if custom:
+                        raise AppError("Filename already exists.", 409)
+                    continue
+                if config.use_b2_storage:
+                    remote = b2connect.b2_file_info(filename)
+                    if remote:
+                        b2connect.remember_remote(remote)
+                        if custom:
+                            raise AppError("Filename already exists in B2.", 409)
+                        continue
+                with transaction() as connection:
+                    connection.execute(
+                        "INSERT INTO uploaded_names (filename, backed_up, status, size, original_name, created, accessed, sha256, expires) "
+                        "VALUES (?, 0, 'pending', ?, ?, ?, ?, ?, ?)",
+                        (filename, size, original_name, time.time(), time.time(), digest, expires),
+                    )
+                try:
+                    if config.use_b2_storage:
+                        b2connect.b2_file_upload(temporary, filename, digest)
+                        with transaction() as connection:
+                            connection.execute("UPDATE uploaded_names SET status = 'available', backed_up = 1 WHERE filename = ?", (filename,))
+                        try:
+                            publish_cache(temporary, filename, size)
+                        except (OSError, AppError) as exception:
+                            wh_report("Upload stored in B2; local caching failed.", exception)
+                    else:
+                        publish_cache(temporary, filename, size)
+                        with transaction() as connection:
+                            connection.execute("UPDATE uploaded_names SET status = 'available' WHERE filename = ?", (filename,))
+                    if thumbnail:
+                        try:
+                            publish_thumbnail(thumbnail, filename)
+                        except OSError as exception:
+                            wh_report("Thumbnail caching failed.", exception)
+                    forget_missing(filename)
+                    return UploadResult(filename, size)
+                except Exception:
+                    with transaction() as connection:
+                        connection.execute("UPDATE uploaded_names SET status = 'failed' WHERE filename = ? AND status = 'pending'", (filename,))
+                    raise
+        raise BackendError("Unable to generate an unused filename. Please retry.")
 
-                    if use_b2_storage and not b2_file_upload(str(temporary_path), filename):
-                        return False, "Error uploading file to B2. Check console output for details."
-                    with storage_transaction() as connection:
-                        make_cache_room(file_size, connection, use_b2_storage)
-                        os.replace(temporary_path, filepath)
-                        connection.execute(
-                            "UPDATE uploaded_names SET backed_up = ?, deleted = 0 WHERE filename = ?",
-                            (int(use_b2_storage), filename),
-                        )
-                    return True, filename
-        return False, "Unable to generate an unused filename."
-    except ValueError as exception:
-        return False, str(exception)
-    except Exception as exception:
-        wh_report("Error uploading file.", exception)
-        return False, "Error uploading file to server. Check console output for details."
-    finally:
-        if clean_file is not uploaded_file:
-            clean_file.close()
+
+def recover_pending():
+    with closing(connect()) as connection:
+        rows = connection.execute("SELECT * FROM uploaded_names WHERE status IN ('pending', 'failed') LIMIT 100").fetchall()
+    for row in rows:
+        try:
+            with file_lock(row["filename"]):
+                recover_name(row["filename"], row, row["sha256"])
+        except AppError as exception:
+            wh_report("Upload recovery could not finish.", exception)

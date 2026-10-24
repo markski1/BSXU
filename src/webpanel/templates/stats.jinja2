@@ -1,32 +1,8 @@
 {% extends "layout.jinja2" %}
-{% block title %}Stats{% endblock %}
-
+{% block title %}Statistics{% endblock %}
 {% block main %}
-
-    <h3>Stats per file</h3>
-    <p>Counted since BSXU was started. ({{ start_date }})</p>
-    {% if file_hits %}
-    <table style="width: 100%">
-        <thead style="margin-bottom: 0.5rem">
-            <tr>
-                <td>File</td>
-                <td>Hits</td>
-            </tr>
-        </thead>
-
-        <tbody>
-            {% for name, amount in file_hits.items() %}
-                <tr>
-                    <td>{{ name }}</td>
-                    <td>{{ amount }}</td>
-                </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-    {% else %}
-        <p>No hits recorded since BSXU was started.</p>
-    {% endif %}
-
-    <a role="button" class="menu-button" href="/panel/main">Return</a>
-
+<h1>Statistics</h1>
+<p class="muted">Full GET requests are counted across workers and restarts. HEAD, partial video requests and conditional responses are excluded. These counts are requests, not unique viewers.</p>
+<div class="metrics"><article><span>Available files</span><strong>{{ summary.files }}</strong></article><article><span>Stored file bytes</span><strong>{{ summary.total_bytes|filesize }}</strong></article><article><span>Full GET requests</span><strong>{{ summary.hits }}</strong></article></div>
+<div class="table-scroll"><table><caption>Top 100 files by full GET requests</caption><thead><tr><th scope="col">File</th><th scope="col">Requests</th><th scope="col">Storage</th></tr></thead><tbody>{% for file in files %}<tr><td class="file-name"><a href="{{ url_for('files.get_file', filename=file.filename) }}">{{ file.filename }}</a></td><td>{{ file.hits }}</td><td>{{ file.storage }}</td></tr>{% else %}<tr><td colspan="3">No files yet.</td></tr>{% endfor %}</tbody></table></div>
 {% endblock %}

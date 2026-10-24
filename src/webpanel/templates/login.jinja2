@@ -1,13 +1,15 @@
 {% extends "layout.jinja2" %}
-{% block title %}Login{% endblock %}
-
+{% block title %}Sign in{% endblock %}
 {% block main %}
-
-    <h3>Admin panel entry</h3>
-    <form method="POST" action="/panel/login">
+<section class="login-card">
+    <h1>Sign in to BSXU</h1>
+    <p class="muted">Use your admin key. Upload-only keys cannot open this panel.</p>
+    {% if error %}<p class="notice error" role="alert">{{ error }}</p>{% endif %}
+    <form action="{{ url_for('panel.login') }}" method="post" class="stack">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <label>Auth: <input type="text" name="auth_key" placeholder="Auth key"></label>
-        <input type="submit" value="Access">
+        <label for="admin-key">Admin key</label>
+        <input type="password" id="admin-key" name="auth_key" autocomplete="current-password" required maxlength="256" autofocus>
+        <button type="submit">Sign in</button>
     </form>
-
+</section>
 {% endblock %}

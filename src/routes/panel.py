@@ -1,66 +1,67 @@
-import os
+from contextlib import closing
+import math
+from pathlib import Path
+import re
 import secrets
+import time
+from urllib.parse import quote
 
-from flask import Blueprint, abort, redirect, render_template, request, session
+from flask import Blueprint, abort, flash, jsonify, redirect, render_template, request, session, url_for
 from flask_login import current_user, login_required, login_user, logout_user
 
-from core import actions
-from core.b2connect import b2_delete_file, b2_get_files
-from core.cache import cache_delete_file, cache_filepath
-from core.cache import clear_cache as clear_cache_folder
-from core.config import cache_folder, url_path, use_b2_storage
-from core.session import Session, attempt_login, revoke_session
-from core.stats import get_all_file_hits, get_total_hits, start_date
+from core import actions, b2connect
+from core.cache import cache_delete_file, cache_filepath, clear_cache
+from core.config import settings
+from core.errors import AppError
+from core.media import IMAGE_EXTENSIONS, VIDEO_EXTENSIONS
+from core.session import attempt_login, create_upload_key, revoke_session
+from core.state import connect, file_record, transaction
+from core.uploads import MAX_BATCH_FILES, ensure_upload_authorized, require_panel_upload_credentials, reserve_upload_attempt
 
 panel_bp = Blueprint("panel", __name__, url_prefix="/panel")
 
 
 def get_csrf_token():
-    token = session.get("_csrf_token")
-    if token is None:
-        token = secrets.token_urlsafe(32)
-        session["_csrf_token"] = token
-    return token
+    if "_csrf_token" not in session:
+        session["_csrf_token"] = secrets.token_urlsafe(32)
+    return session["_csrf_token"]
 
 
 @panel_bp.context_processor
-def inject_csrf_token():
-    return {"csrf_token": get_csrf_token}
+def panel_context():
+    return {"csrf_token": get_csrf_token, "config": settings(), "now": time.time()}
 
 
 @panel_bp.before_request
 def validate_csrf_token():
     if request.method != "POST":
         return
+    if request.endpoint == "panel.file_upload":
+        ensure_upload_authorized()
+        return
+    if request.endpoint != "panel.login" and not current_user.is_authenticated:
+        abort(401, description="Sign in before making changes.")
+    expected = session.get("_csrf_token", "")
+    supplied = request.form.get("csrf_token", "")
+    if not re.fullmatch(r"[A-Za-z0-9_-]{43}", supplied) or not expected or not secrets.compare_digest(expected.encode(), supplied.encode()):
+        abort(400, description="The form expired. Reload the page and try again.")
 
-    expected_token = session.get("_csrf_token", "")
-    submitted_token = request.form.get("csrf_token", "")
-    if not expected_token or not secrets.compare_digest(expected_token, submitted_token):
-        abort(400, description="Invalid CSRF token.")
 
-
-@panel_bp.route("/")
+@panel_bp.get("/")
 def login_prompt():
-    if current_user.is_authenticated:
-        return redirect("/panel/main")
-    else:
-        return render_template("login.jinja2")
+    return redirect(url_for("panel.main_ui")) if current_user.is_authenticated else render_template("login.jinja2")
 
 
 @panel_bp.post("/login")
 def login():
-    auth_key = request.form.get("auth_key", "")
-
-    result = attempt_login(auth_key)
-
-    if result is not None:
-        user_model = Session()
-        user_model.id = result
-        login_user(user_model)
-        session.pop("_csrf_token", None)
-        return redirect("/panel/")
-    else:
-        return "Invalid auth key."
+    key = request.form.get("auth_key", "")
+    user = attempt_login(key) if len(key) <= 256 else None
+    if user is None:
+        return render_template("login.jinja2", error="Invalid admin key."), 401
+    session.clear()
+    session.permanent = True
+    login_user(user)
+    return redirect(url_for("panel.main_ui"), code=303)
 
 
 @panel_bp.post("/logout")
@@ -69,178 +70,250 @@ def logout():
     revoke_session(current_user.get_id())
     logout_user()
     session.clear()
-    return redirect("../")
+    return redirect(url_for("panel.login_prompt"), code=303)
 
 
-@panel_bp.route("/main")
+def rows_as_files(rows):
+    results = []
+    for row in rows:
+        item = dict(row)
+        suffix = Path(item["filename"]).suffix.lower()
+        item["is_image"] = suffix in IMAGE_EXTENSIONS
+        item["is_video"] = suffix in VIDEO_EXTENSIONS
+        item["url"] = settings().url_path + quote(item["filename"])
+        item["storage"] = "B2 + cache" if item["backed_up"] and item["cached"] else "B2" if item["backed_up"] else "Local only"
+        results.append(item)
+    return results
+
+
+def overview(connection):
+    return dict(connection.execute(
+        "SELECT count(*) AS files, COALESCE(sum(CASE WHEN cached = 1 THEN size ELSE 0 END), 0) AS cached_bytes, "
+        "COALESCE(sum(size), 0) AS total_bytes, COALESCE(sum(hits), 0) AS hits "
+        "FROM uploaded_names WHERE status = 'available'"
+    ).fetchone())
+
+
+@panel_bp.get("/main")
 @login_required
 def main_ui():
-    file_list, total_size = cached_file_data()
-    return render_template(
-        "panel.jinja2",
-        use_b2_storage=use_b2_storage,
-        cache_amount=len(file_list),
-        cache_size=total_size,
-        total_hits=get_total_hits(),
-        start_date=start_date,
-    )
+    with closing(connect()) as connection:
+        summary = overview(connection)
+        recent = connection.execute("SELECT * FROM uploaded_names WHERE status = 'available' ORDER BY created DESC LIMIT 8").fetchall()
+        failed = connection.execute("SELECT count(*) FROM uploaded_names WHERE status IN ('pending', 'failed')").fetchone()[0]
+        staging = connection.execute("SELECT COALESCE(sum(bytes), 0) FROM staging").fetchone()[0]
+    return render_template("panel.jinja2", summary=summary, files=rows_as_files(recent), failed=failed, staging=staging)
 
 
-@panel_bp.route("/files")
+@panel_bp.get("/files")
 @login_required
 def files_ui():
-    if not use_b2_storage:
-        return render_template(
-            "result.jinja2",
-            result_title="B2 upload disabled.",
-            result_outcome=f"This endpoint is disabled because B2 storage is disabled.",
-        )
+    query = request.args.get("q", "")[:200]
+    sort = request.args.get("sort", "newest")
+    storage = request.args.get("storage", "all")
+    order = {"newest": "created DESC", "oldest": "created ASC", "name": "filename COLLATE NOCASE", "size": "size DESC", "hits": "hits DESC"}.get(sort, "created DESC")
+    try:
+        page = min(100000, max(1, int(request.args.get("page", "1"))))
+    except ValueError:
+        raise AppError("Invalid page.")
+    conditions = ["status IN ('available', 'deleting')"]
+    parameters = []
+    if query:
+        conditions.append("(filename LIKE ? ESCAPE '\\' OR original_name LIKE ? ESCAPE '\\')")
+        pattern = "%" + query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+        parameters.extend([pattern, pattern])
+    filter_condition = {"local": "backed_up = 0", "cached": "cached = 1", "remote": "backed_up = 1 AND cached = 0"}.get(storage)
+    if filter_condition:
+        conditions.append(filter_condition)
+    where = " AND ".join(conditions)
+    with closing(connect()) as connection:
+        total = connection.execute(f"SELECT count(*) FROM uploaded_names WHERE {where}", parameters).fetchone()[0]
+        rows = connection.execute(f"SELECT * FROM uploaded_names WHERE {where} ORDER BY {order}, filename LIMIT 25 OFFSET ?",
+                                  parameters + [(page - 1) * 25]).fetchall()
+    return render_template("files.jinja2", files=rows_as_files(rows), total=total, page=page, pages=max(1, math.ceil(total / 25)),
+                           query=query, sort=sort, storage=storage, cursor=request.args.get("cursor", ""))
 
-    b2_files = b2_get_files()
 
-    total_size = 0
-    for f in b2_files:
-        total_size += f.size
+@panel_bp.get("/cache")
+@login_required
+def cache_files_ui():
+    return redirect(url_for("panel.files_ui", storage="cached"))
 
-    return render_template("b2_files.jinja2", files=b2_files, total_size=total_size)
+
+@panel_bp.post("/files/sync")
+@login_required
+def sync_files():
+    if not settings().use_b2_storage:
+        raise AppError("B2 storage is disabled.")
+    cursor = request.form.get("cursor") or None
+    if cursor and len(cursor) > 1000:
+        raise AppError("Invalid B2 cursor.")
+    next_cursor = b2connect.b2_get_files(cursor=cursor)
+    flash("Synchronized up to 50 files from B2. Continue to import the next batch." if next_cursor else "B2 synchronization completed.", "success")
+    return redirect(url_for("panel.files_ui", cursor=next_cursor or ""), code=303)
+
+
+def require_file(filename):
+    cache_filepath(filename)
+    row = file_record(filename)
+    if not row or row["filename"] != filename or row["status"] == "deleted":
+        raise AppError("File not found.", 404)
+    return row
+
+
+def delete_file_data(filename):
+    row = require_file(filename)
+    if row["backed_up"] and settings().use_b2_storage:
+        b2connect.b2_delete_file(filename)
+    else:
+        cache_delete_file(filename)
 
 
 @panel_bp.post("/files/delete/<string:filename>")
 @login_required
 def delete_file(filename):
-    try:
-        cache_filepath(filename)
-    except ValueError:
-        abort(400, description="Invalid filename.")
-    if not use_b2_storage:
-        return render_template(
-            "result.jinja2",
-            result_title="B2 upload disabled.",
-            result_outcome=f"This endpoint is disabled because B2 storage is disabled.",
-        )
-
-    success = b2_delete_file(filename)
-
-    if success:
-        return render_template(
-            "result.jinja2",
-            result_title="File deleted",
-            result_outcome=f"The file `{filename}` has been deleted.",
-        )
-    else:
-        return render_template(
-            "result.jinja2",
-            result_title="File deletion failed",
-        )
-
-
-@panel_bp.route("/cache")
-@login_required
-def cache_files_ui():
-    file_list, total_size = cached_file_data()
-    return render_template(
-        "cache.jinja2",
-        cached_files=file_list,
-        total_size=f"{total_size:,}",
-        use_b2_storage=use_b2_storage,
-        url_path=url_path,
-    )
+    delete_file_data(filename)
+    flash(f"Deleted {filename}.", "success")
+    return redirect(url_for("panel.files_ui"), code=303)
 
 
 @panel_bp.post("/cache/delete/<string:filename>")
 @login_required
 def delete_cache_file(filename):
-    try:
-        success = cache_delete_file(filename)
-    except ValueError:
-        abort(400, description="Invalid filename.")
-    if not success:
-        return render_template(
-            "result.jinja2", result_title="File deletion failed"
-        ), 404
-    return render_template(
-        "result.jinja2",
-        result_title="File deleted from cache",
-        result_outcome=f"The file `{filename}` has been deleted from cache.",
-    )
+    require_file(filename)
+    cache_delete_file(filename)
+    flash(f"Removed {filename} from local storage.", "success")
+    return redirect(url_for("panel.files_ui"), code=303)
 
 
-@panel_bp.route("/stats")
+@panel_bp.post("/files/link/<string:filename>")
 @login_required
-def stats_ui():
-    return render_template(
-        "stats.jinja2", start_date=start_date, file_hits=get_all_file_hits()
-    )
+def change_link(filename):
+    row = require_file(filename)
+    if row["status"] == "deleting":
+        raise AppError("Finish the pending deletion before changing this link.", 409)
+    with transaction() as connection:
+        connection.execute("UPDATE uploaded_names SET revoked = ? WHERE filename = ?", (0 if row["revoked"] else 1, filename))
+    flash("Share link restored." if row["revoked"] else "Share link revoked.", "success")
+    return redirect(url_for("panel.files_ui"), code=303)
 
 
-@panel_bp.route("/upload")
+@panel_bp.post("/files/bulk")
+@login_required
+def bulk_files():
+    filenames = list(dict.fromkeys(request.form.getlist("filename")))
+    action = request.form.get("action")
+    if not filenames or len(filenames) > 25 or action not in {"delete", "revoke"}:
+        raise AppError("Select between 1 and 25 files and a valid action.")
+    for filename in filenames:
+        require_file(filename)
+    if action == "delete" and request.form.get("confirmation") != "delete":
+        return render_template("confirm_clear.jinja2", filenames=filenames)
+    for filename in filenames:
+        if action == "delete":
+            delete_file_data(filename)
+        else:
+            with transaction() as connection:
+                connection.execute("UPDATE uploaded_names SET revoked = 1 WHERE filename = ?", (filename,))
+    flash(f"Updated {len(filenames)} files.", "success")
+    return redirect(url_for("panel.files_ui"), code=303)
+
+
+@panel_bp.get("/upload")
 @login_required
 def upload_ui():
     return render_template("upload.jinja2")
 
 
-# Actions
+@panel_bp.get("/upload-auth")
+def upload_auth():
+    require_panel_upload_credentials()
+    return "", 204
 
 
 @panel_bp.post("/file-upload")
 @login_required
 def file_upload():
-    if "fileupload" not in request.files:
-        return "No file provided.", 400
+    uploads = request.files.getlist("fileupload")
+    if not uploads or len(uploads) > MAX_BATCH_FILES:
+        raise AppError(f"Select between 1 and {MAX_BATCH_FILES} files.")
+    custom = request.form.get("file-name", "").strip()
+    if custom and len(uploads) != 1:
+        raise AppError("A custom filename can only be used with one file.")
+    results, errors = [], []
+    for index, uploaded_file in enumerate(uploads):
+        try:
+            if index:
+                reserve_upload_attempt()
+            result = actions.upload_file(uploaded_file, custom, request.form.get("expiry"))
+            results.append({"filename": result.filename, "url": settings().url_path + quote(result.filename)})
+        except AppError as exception:
+            errors.append({"index": index, "filename": secure_original(uploaded_file.filename), "message": str(exception), "status": exception.status})
+    if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+        return jsonify(files=results, errors=errors), (201 if results and not errors else 207 if results else errors[0]["status"])
+    for error in errors:
+        flash(f"{error['filename']}: {error['message']}", "error")
+    if results:
+        session["upload_results"] = results[:MAX_BATCH_FILES]
+        return redirect(url_for("panel.upload_result"), code=303)
+    return redirect(url_for("panel.upload_ui"), code=303)
 
-    uploaded_file = request.files["fileupload"]
-    file_name = request.form.get("file-name")
 
-    if file_name is not None and len(file_name) > 0:
-        success, ret = actions.upload_file(uploaded_file, file_name)
-    else:
-        success, ret = actions.upload_file(uploaded_file)
+def secure_original(filename):
+    return (filename or "Selected file")[:200]
 
-    if success:
-        return render_template(
-            "result.jinja2",
-            result_title="File uploaded",
-            result_outcome=f"The file has been uploaded: `{url_path}{ret}`",
-        )
-    else:
-        return render_template(
-            "result.jinja2", result_title="Upload failed", result_outcome=ret
-        )
+
+@panel_bp.get("/uploaded")
+@login_required
+def upload_result():
+    results = session.pop("upload_results", [])
+    return render_template("result.jinja2", result_title="Upload complete", uploaded_files=results)
 
 
 @panel_bp.post("/cache/clear")
 @login_required
 def clear_cache_route():
-    confirmation = request.form.get("confirmation", "")
-    if not use_b2_storage and confirmation != "override":
-        return render_template("confirm_clear.jinja2")
-
-    clear_cache_folder(cache_folder)
-    return redirect("/panel/cache")
-
-
-# Helpers
-
-image_extensions = [".jpg", ".jpeg", ".png", ".gif"]
+    with closing(connect()) as connection:
+        local_only = connection.execute("SELECT filename FROM uploaded_names WHERE cached = 1 AND backed_up = 0").fetchall()
+    if local_only and request.form.get("confirmation") != "delete":
+        return render_template("confirm_clear.jinja2", filenames=[row[0] for row in local_only], clear_all=True)
+    clear_cache()
+    flash("Local storage cleared.", "success")
+    return redirect(url_for("panel.files_ui"), code=303)
 
 
-def cached_file_data():
-    file_list = []
-    total_size = 0
-    for fname in os.listdir(cache_folder):
-        file_path = os.path.join(cache_folder, fname)
-        if os.path.isfile(file_path):
-            file_size_kb = os.path.getsize(file_path) / 1024
+@panel_bp.get("/stats")
+@login_required
+def stats_ui():
+    with closing(connect()) as connection:
+        summary = overview(connection)
+        rows = connection.execute("SELECT * FROM uploaded_names WHERE status = 'available' ORDER BY hits DESC LIMIT 100").fetchall()
+    return render_template("stats.jinja2", summary=summary, files=rows_as_files(rows))
 
-            file_list.append(
-                {
-                    "name": fname,
-                    "size": int(file_size_kb),
-                    "is_image": True
-                    if any(ext in fname for ext in image_extensions)
-                    else False,
-                }
-            )
-            total_size += file_size_kb
 
-    return file_list, int(total_size)
+@panel_bp.get("/keys")
+@login_required
+def keys_ui():
+    with closing(connect()) as connection:
+        keys = connection.execute("SELECT id, label, created, last_used FROM upload_keys ORDER BY created DESC").fetchall()
+    return render_template("keys.jinja2", keys=keys)
+
+
+@panel_bp.post("/keys/create")
+@login_required
+def add_key():
+    label = request.form.get("label", "").strip()
+    if not label:
+        raise AppError("Give the device key a name.")
+    token = create_upload_key(label)
+    return render_template("result.jinja2", result_title="Device key created",
+                           result_outcome="Copy this upload-only key now. It will not be displayed again.", new_key=token), 201
+
+
+@panel_bp.post("/keys/revoke/<string:key_id>")
+@login_required
+def revoke_key(key_id):
+    with transaction() as connection:
+        connection.execute("DELETE FROM upload_keys WHERE id = ?", (key_id,))
+    flash("Device key revoked.", "success")
+    return redirect(url_for("panel.keys_ui"), code=303)

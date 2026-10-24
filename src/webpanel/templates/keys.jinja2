@@ -1,0 +1,12 @@
+{% extends "layout.jinja2" %}
+{% block title %}Device keys{% endblock %}
+{% block main %}
+<h1>Device keys</h1>
+<p class="muted">Each key can upload files and cannot sign in or delete files. Revoke a lost device's key here. Your environment AUTH_KEY remains a separate upload-only key.</p>
+<form action="{{ url_for('panel.add_key') }}" method="post" class="filters">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div><label for="key-label">Device name</label><input id="key-label" name="label" placeholder="Work laptop" maxlength="80" required></div>
+    <button type="submit">Create upload key</button>
+</form>
+<div class="table-scroll"><table><caption>Active upload-only credentials</caption><thead><tr><th scope="col">Device</th><th scope="col">Created</th><th scope="col">Last used</th><th scope="col">Action</th></tr></thead><tbody>{% for key in keys %}<tr><td>{{ key.label }}</td><td>{{ key.created|date }}</td><td>{{ key.last_used|date }}</td><td><form action="{{ url_for('panel.revoke_key', key_id=key.id) }}" method="post" data-confirm="Revoke the upload key for {{ key.label }}?"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button type="submit" class="danger secondary">Revoke key</button></form></td></tr>{% else %}<tr><td colspan="4">Create a separate key for each uploader device.</td></tr>{% endfor %}</tbody></table></div>
+{% endblock %}

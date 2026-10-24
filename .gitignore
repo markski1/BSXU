@@ -114,6 +114,7 @@ celerybeat.pid
 # Environments
 src/.env
 .venv
+.uv-cache/
 env/
 venv/
 ENV/

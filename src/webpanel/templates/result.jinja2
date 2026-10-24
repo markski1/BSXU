@@ -1,12 +1,11 @@
 {% extends "layout.jinja2" %}
-{% block title %}{{ result_title }}{% endblock %}
-
+{% block title %}{{ result_title or 'Result' }}{% endblock %}
 {% block main %}
-
-    <h3>Admin panel</h3>
-    <p>{{ result_title }}</p>
-    <p>{{ result_outcome }}</p>
-    <hr>
-    <a role="button" class="menu-button" href="/panel/main">Return</a>
-
+<h1>{{ result_title or 'Result' }}</h1>
+{% if result_outcome %}<p>{{ result_outcome }}</p>{% endif %}
+{% if new_key %}<div class="key-result"><code>{{ new_key }}</code><button type="button" data-copy="{{ new_key }}">Copy device key</button></div>{% endif %}
+{% if uploaded_files %}
+<ul class="recent-files">{% for file in uploaded_files %}<li><div class="file-name"><strong>{{ file.filename }}</strong><a href="{{ file.url }}">{{ file.url }}</a></div><button type="button" class="secondary" data-copy="{{ file.url }}">Copy link</button></li>{% endfor %}</ul>
+{% endif %}
+<div class="actions"><a class="button secondary" href="{{ url_for('panel.files_ui') }}">View files</a><a class="button quiet" href="{{ url_for('panel.upload_ui') }}">Upload more</a></div>
 {% endblock %}

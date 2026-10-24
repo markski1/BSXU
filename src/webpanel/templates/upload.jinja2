@@ -1,19 +1,24 @@
 {% extends "layout.jinja2" %}
-{% block title %}Cached files{% endblock %}
-
+{% block title %}Upload files{% endblock %}
 {% block main %}
-
-    <h3>Admin panel</h3>
-    <p>Upload file</p>
-
-    <form action="/panel/file-upload" method="POST" enctype="multipart/form-data">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <label>File name: <input type="text" name="file-name" placeholder="Leave empty to randomly generate. Do not include extension."></label><br>
-        <label>File: <input type="file" id="fileupload" name="fileupload"></label><br>
-        <input type="submit" value="Upload"><br>
-    </form>
-
-    <hr>
-    <a role="button" class="menu-button" href="/panel/main">Return</a>
-
+<div class="page-heading"><h1>Upload files</h1></div>
+<p class="muted">Up to {{ config.max_upload_size_mb }} MiB combined, maximum 5 files. Images are processed to remove metadata while preserving orientation and supported animation.</p>
+<noscript><p class="notice warning">JavaScript is required to send the security header before uploading. You can also use an authenticated upload client.</p></noscript>
+<form id="upload-form" action="{{ url_for('panel.file_upload') }}" method="post" enctype="multipart/form-data" class="stack" data-max-bytes="{{ config.max_upload_size_mb * 1024 * 1024 }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div id="drop-zone" class="drop-zone">
+        <strong>Drop files here, paste an image, or choose files</strong>
+        <label for="fileupload" class="sr-only">Files to upload</label>
+        <input type="file" id="fileupload" name="fileupload" multiple required aria-describedby="selection-help">
+        <p id="selection-help" class="muted">The upload starts when you select Upload.</p>
+    </div>
+    <ul id="file-selection" class="selection" aria-live="polite"></ul>
+    <div class="form-grid">
+        <div><label for="file-name">Custom filename <span class="muted">(optional)</span></label><input id="file-name" name="file-name" maxlength="150" aria-describedby="name-help"><small id="name-help">One file only. Omit the extension. Leave empty for a random name.</small></div>
+        <div><label for="expiry">Link expires in</label><select id="expiry" name="expiry"><option value="">Never</option><option value="1">1 hour</option><option value="24">24 hours</option><option value="168">7 days</option><option value="720">30 days</option></select><small>Expiry disables access through the link; it does not delete the file.</small></div>
+    </div>
+    <div class="upload-status" hidden><label for="upload-progress">Upload progress</label><progress id="upload-progress" max="100" value="0"></progress><p id="upload-message" role="status"></p></div>
+    <button type="submit" id="upload-submit">Upload files</button>
+</form>
+<section id="upload-results" class="upload-results" aria-live="polite" hidden><h2>Upload results</h2><div></div></section>
 {% endblock %}

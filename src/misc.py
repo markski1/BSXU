@@ -1,47 +1,50 @@
-import os
+import logging
+from queue import Full, Queue
 import secrets
 import string
-import traceback
+import threading
 
 import requests
-from dotenv import load_dotenv
+from flask import current_app, has_app_context
 
-load_dotenv()
-
-webhook_url = os.getenv("WEBHOOK_URL", "false")
-using_webhook = webhook_url.lower() != "false"
-webhook_param = os.getenv("WEBHOOK_PARAM", "content")
+notifications = Queue(maxsize=20)
+worker_lock = threading.Lock()
+worker_started = False
 
 
-def generate_random_string(length: int) -> str:
-    length = int(length)
-    alphanumeric_characters = string.ascii_letters + string.digits
-    return "".join(secrets.choice(alphanumeric_characters) for _ in range(length))
+def generate_random_string(length):
+    return "".join(secrets.choice(string.ascii_letters + string.digits) for _ in range(length))
 
 
-def wh_report(text: str, exception: Exception | None = None) -> None:
-    message = "[BSXU] - " + text
-    if exception:
+def send_notifications():
+    while True:
+        url, parameter, message = notifications.get()
         try:
-            exception_text = (
-                f"{exception} \n ```{traceback.format_tb(exception.__traceback__)}```"
-            )
-        except Exception:
-            exception_text = (
-                f"Another exception was met trying to get a traceback for the original exception. "
-                f"\n ({exception})"
-            )
+            with requests.post(url, json={parameter: message}, timeout=(3, 5)) as response:
+                response.raise_for_status()
+        except requests.RequestException:
+            logging.getLogger("bsxu").warning("Webhook notification failed.")
+        finally:
+            notifications.task_done()
+
+
+def wh_report(text, exception=None):
+    global worker_started
+    logger = current_app.logger if has_app_context() else logging.getLogger("bsxu")
+    if exception is not None:
+        logger.error(text, exc_info=(type(exception), exception, exception.__traceback__))
     else:
-        exception_text = ""
-
-    if using_webhook:
-        try:
-            requests.post(webhook_url, json={webhook_param: message}, timeout=(3.05, 5))
-            if exception:
-                requests.post(webhook_url, json={webhook_param: exception_text}, timeout=(3.05, 5))
-        except requests.RequestException as webhook_error:
-            print(f"[BSXU] - Webhook notification failed: {webhook_error}")
-
-    print(message)
-    if exception:
-        print(exception_text)
+        logger.info(text)
+    if not has_app_context():
+        return
+    config = current_app.extensions["settings"]
+    if config.webhook_url == "false":
+        return
+    with worker_lock:
+        if not worker_started:
+            threading.Thread(target=send_notifications, daemon=True, name="bsxu-webhooks").start()
+            worker_started = True
+    try:
+        notifications.put_nowait((config.webhook_url, config.webhook_param, "[BSXU] " + text))
+    except Full:
+        logger.warning("Webhook queue is full.")
