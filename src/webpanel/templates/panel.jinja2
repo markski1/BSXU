@@ -1,23 +1,73 @@
 {% extends "layout.jinja2" %}
+{% from "file_icon.jinja2" import file_icon %}
+
 {% block title %}Overview{% endblock %}
+
 {% block main %}
-<div class="page-heading"><h1>Overview</h1><a class="button" href="{{ url_for('panel.upload_ui') }}">Upload files</a></div>
-<div class="metrics">
-    <article><span>Available files</span><strong>{{ summary.files }}</strong></article>
-    <article><span>Local cache</span><strong>{{ summary.cached_bytes|filesize }}</strong><small>of {{ config.cache_max_size_mb }} MiB</small></article>
-    <article><span>Full GET requests</span><strong>{{ summary.hits }}</strong><small>Saved across restarts</small></article>
-</div>
-{% if staging %}<p class="notice">Temporary disk reservations: {{ staging|filesize }}.</p>{% endif %}
-{% if failed %}<p class="notice warning">{{ failed }} upload(s) need recovery. Retry their custom name, or run the documented maintenance command.</p>{% endif %}
-<div class="section-heading"><h2>Recent uploads</h2><a href="{{ url_for('panel.files_ui') }}">View all files</a></div>
-{% if files %}
-<ul class="recent-files">
-{% for file in files %}
-<li><div class="file-name"><a href="{{ url_for('files.get_file', filename=file.filename) }}">{{ file.original_name or file.filename }}</a><small>{{ file.created|date }} · {{ file.size|filesize }} · {{ file.storage }}</small></div>
-<button class="secondary" type="button" data-copy="{{ file.url }}" aria-label="Copy link for {{ file.filename }}">Copy link</button></li>
-{% endfor %}
-</ul>
-{% else %}
-<div class="empty"><h2>Your library is ready</h2><p>Upload a file to get a shareable link, or synchronize your existing B2 files.</p><a class="button" href="{{ url_for('panel.upload_ui') }}">Upload your first file</a></div>
-{% endif %}
+    <div class="page-heading">
+        <h1>Overview</h1>
+        <a class="button" href="{{ url_for('panel.upload_ui') }}">Upload files</a>
+    </div>
+
+    <div class="metrics">
+        <article>
+            <span>Available files</span>
+            <strong>{{ summary.files }}</strong>
+        </article>
+        <article>
+            <span>Local cache</span>
+            <strong>{{ summary.cached_bytes | filesize }}</strong>
+            <small>of {{ config.cache_max_size_mb }} MiB</small>
+        </article>
+        <article>
+            <span>Full GET requests</span>
+            <strong>{{ summary.hits }}</strong>
+            <small>Saved across restarts</small>
+        </article>
+    </div>
+
+    {% if staging %}
+        <p class="notice">Temporary disk reservations: {{ staging | filesize }}.</p>
+    {% endif %}
+
+    {% if failed %}
+        <p class="notice warning">
+            {{ failed }} upload(s) need recovery. Retry their custom name, or run the documented maintenance command.
+        </p>
+    {% endif %}
+
+    <div class="section-heading">
+        <h2>Recent uploads</h2>
+        <a href="{{ url_for('panel.files_ui') }}">View all files</a>
+    </div>
+
+    {% if files %}
+        <ul class="recent-files">
+            {% for file in files %}
+                <li>
+                    <div class="file-name">
+                        <a class="file-title" href="{{ url_for('files.get_file', filename=file.filename) }}">
+                            {{ file_icon(file.filename) }}
+                            <span>{{ file.original_name or file.filename }}</span>
+                        </a>
+                        <small>{{ file.created | date }} · {{ file.size | filesize }} · {{ file.storage }}</small>
+                    </div>
+                    <button
+                        class="secondary"
+                        type="button"
+                        data-copy="{{ file.url }}"
+                        aria-label="Copy link for {{ file.filename }}"
+                    >
+                        Copy link
+                    </button>
+                </li>
+            {% endfor %}
+        </ul>
+    {% else %}
+        <div class="empty">
+            <h2>Your library is ready</h2>
+            <p>Upload a file to get a shareable link, or synchronize your existing B2 files.</p>
+            <a class="button" href="{{ url_for('panel.upload_ui') }}">Upload your first file</a>
+        </div>
+    {% endif %}
 {% endblock %}

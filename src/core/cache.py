@@ -76,6 +76,15 @@ def reconcile_cache():
                 "cached = 1, size = excluded.size",
                 (name, size, name, modified, modified),
             )
+    with closing(connect()) as connection:
+        cached = connection.execute("SELECT filename FROM uploaded_names WHERE cached = 1").fetchall()
+    for row in cached:
+        try:
+            with file_lock(row["filename"]), transaction() as connection:
+                if not cache_filepath(row["filename"]).is_file():
+                    connection.execute("UPDATE uploaded_names SET cached = 0 WHERE filename = ?", (row["filename"],))
+        except AppError as exception:
+            wh_report("Cache reconciliation will be retried.", exception)
 
 
 @contextmanager

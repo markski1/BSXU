@@ -20,6 +20,31 @@ from core.uploads import MAX_BATCH_FILES, ensure_upload_authorized, require_pane
 
 panel_bp = Blueprint("panel", __name__, url_prefix="/panel")
 
+FILE_TYPES = {
+    "image": ("Image", "jpg jpeg png gif webp avif bmp ico svg tif tiff heic heif jxl psd raw dng cr2 nef"),
+    "video": ("Video", "mp4 m4v webm ogv mov mkv avi wmv flv mpg mpeg 3gp mts m2ts"),
+    "audio": ("Audio", "mp3 m4a aac wav flac ogg oga opus aiff aif wma mid midi"),
+    "pdf": ("PDF document", "pdf"),
+    "document": ("Document", "doc docx odt rtf pages epub mobi"),
+    "spreadsheet": ("Spreadsheet", "xls xlsx xlsm ods csv tsv numbers"),
+    "presentation": ("Presentation", "ppt pptx pps ppsx odp key"),
+    "archive": ("Archive", "zip rar 7z tar gz bz2 xz zst tgz tbz2 txz cab"),
+    "code": ("Code", "py pyw js mjs cjs jsx ts tsx html htm css scss sass less json xml yaml yml toml ini cfg conf sh bash ps1 bat cmd c h cpp hpp cs java go rs rb php sql ipynb vue svelte"),
+    "text": ("Text", "txt md markdown rst log tex srt vtt"),
+    "font": ("Font", "ttf otf woff woff2"),
+    "application": ("Application / disk image", "exe msi msix appx dmg pkg deb rpm apk appimage iso img"),
+}
+FILE_TYPES_BY_EXTENSION = {
+    "." + extension: (kind, label)
+    for kind, (label, extensions) in FILE_TYPES.items()
+    for extension in extensions.split()
+}
+
+
+@panel_bp.app_template_filter("file_type")
+def file_type(filename):
+    return FILE_TYPES_BY_EXTENSION.get(Path(filename).suffix.lower(), ("file", "File"))
+
 
 def get_csrf_token():
     if "_csrf_token" not in session:
@@ -54,7 +79,7 @@ def login_prompt():
 
 @panel_bp.post("/login")
 def login():
-    key = request.form.get("auth_key", "")
+    key = request.form.get("admin_key", "")
     user = attempt_login(key) if len(key) <= 256 else None
     if user is None:
         return render_template("login.jinja2", error="Invalid admin key."), 401
@@ -81,7 +106,10 @@ def rows_as_files(rows):
         item["is_image"] = suffix in IMAGE_EXTENSIONS
         item["is_video"] = suffix in VIDEO_EXTENSIONS
         item["url"] = settings().url_path + quote(item["filename"])
-        item["storage"] = "B2 + cache" if item["backed_up"] and item["cached"] else "B2" if item["backed_up"] else "Local only"
+        if item["backed_up"]:
+            item["storage"] = "B2 + cache" if item["cached"] else "B2"
+        else:
+            item["storage"] = "Local only" if item["cached"] else "Unavailable"
         results.append(item)
     return results
 
@@ -302,11 +330,8 @@ def keys_ui():
 @panel_bp.post("/keys/create")
 @login_required
 def add_key():
-    label = request.form.get("label", "").strip()
-    if not label:
-        raise AppError("Give the device key a name.")
-    token = create_upload_key(label)
-    return render_template("result.jinja2", result_title="Device key created",
+    token = create_upload_key(request.form.get("label", ""))
+    return render_template("result.jinja2", result_title="Upload key created",
                            result_outcome="Copy this upload-only key now. It will not be displayed again.", new_key=token), 201
 
 
@@ -315,5 +340,5 @@ def add_key():
 def revoke_key(key_id):
     with transaction() as connection:
         connection.execute("DELETE FROM upload_keys WHERE id = ?", (key_id,))
-    flash("Device key revoked.", "success")
+    flash("Upload key revoked.", "success")
     return redirect(url_for("panel.keys_ui"), code=303)

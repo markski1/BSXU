@@ -1,58 +1,249 @@
 {% extends "layout.jinja2" %}
+{% from "file_icon.jinja2" import file_icon %}
+
 {% block title %}Files{% endblock %}
+
 {% block main %}
-<div class="page-heading"><h1>Files <span class="muted">{{ total }}</span></h1><a class="button" href="{{ url_for('panel.upload_ui') }}">Upload files</a></div>
-<form class="filters" method="get" action="{{ url_for('panel.files_ui') }}">
-    <div><label for="search">Search files</label><input id="search" type="search" name="q" value="{{ query }}" placeholder="Name or original filename" maxlength="200"></div>
-    <div><label for="sort">Sort by</label><select id="sort" name="sort">{% for value, label in [('newest','Newest first'),('oldest','Oldest first'),('name','Filename'),('size','Largest first'),('hits','Most requests')] %}<option value="{{ value }}"{% if sort == value %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
-    <div><label for="storage">Storage</label><select id="storage" name="storage">{% for value, label in [('all','All files'),('local','Local only'),('cached','Cached locally'),('remote','B2 only')] %}<option value="{{ value }}"{% if storage == value %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
-    <button type="submit" class="secondary">Apply filters</button>
-</form>
-{% if files %}
-<form id="bulk-files" action="{{ url_for('panel.bulk_files') }}" method="post" class="bulk-controls">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <label for="bulk-action">With selected</label><select id="bulk-action" name="action"><option value="revoke">Revoke links</option><option value="delete">Permanently delete…</option></select>
-    <button type="submit" class="secondary">Continue</button><span class="muted">Up to 25 files per page</span>
-</form>
-<div class="table-scroll">
-<table class="file-table">
-    <caption class="sr-only">Files in your library</caption>
-    <thead><tr><th scope="col"><span class="sr-only">Select</span></th><th scope="col">File</th><th scope="col">Size / storage</th><th scope="col">Preview</th><th scope="col">Actions</th></tr></thead>
-    <tbody>
-    {% for file in files %}
-    <tr>
-        <td data-label="Select"><input type="checkbox" name="filename" value="{{ file.filename }}" form="bulk-files" aria-label="Select {{ file.filename }}"></td>
-        <td class="file-name" data-label="File"><a href="{{ url_for('files.get_file', filename=file.filename) }}">{{ file.original_name or file.filename }}</a><small>{{ file.filename }}</small><small>{{ file.created|date }}</small>
-            {% if file.status == 'deleting' %}<span class="badge warning">Deletion pending · retry Delete file</span>{% elif file.revoked %}<span class="badge warning">Link revoked</span>{% elif file.expires and file.expires <= now %}<span class="badge warning">Link expired</span>{% elif file.expires %}<small>Expires {{ file.expires|date }}</small>{% endif %}
-        </td>
-        <td data-label="Size / storage">{{ file.size|filesize }}<small class="badge">{{ file.storage }}</small></td>
-        <td data-label="Preview" class="preview">
-            {% if file.revoked or file.status == 'deleting' or (file.expires and file.expires <= now) %}<span class="muted">Link disabled</span>
-            {% elif file.is_image %}<a href="{{ url_for('files.get_file', filename=file.filename) }}"><img src="{{ url_for('files.get_file_thumbnail', filename=file.filename) }}" alt="Preview of {{ file.original_name or file.filename }}" width="144" height="96" loading="lazy"></a>
-            {% elif file.is_video %}<video controls preload="none" src="{{ url_for('files.get_file', filename=file.filename) }}" aria-label="Preview of {{ file.filename }}"></video>
-            {% else %}<span class="muted">Document / file</span>{% endif %}
-        </td>
-        <td data-label="Actions"><div class="actions">
-            <button type="button" class="secondary" data-copy="{{ file.url }}">Copy link</button>
-            <a class="button quiet" href="{{ url_for('files.get_file', filename=file.filename) }}">Open</a>
-            <a class="button quiet" href="{{ url_for('files.get_file', filename=file.filename, download=1) }}">Download</a>
-            <form action="{{ url_for('panel.change_link', filename=file.filename) }}" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="quiet" type="submit">{{ 'Restore link' if file.revoked else 'Revoke link' }}</button></form>
-            {% if file.backed_up and file.cached %}<form action="{{ url_for('panel.delete_cache_file', filename=file.filename) }}" method="post" data-confirm="Remove the cached copy of {{ file.filename }}? Its B2 backup and share link will remain available."><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="quiet" type="submit">Remove cached copy</button></form>{% endif %}
-            <form action="{{ url_for('panel.delete_file', filename=file.filename) }}" method="post" data-confirm="Permanently delete {{ file.filename }}{{ ' and all its B2 versions' if file.backed_up else ' from local storage' }}? This cannot be undone."><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="danger quiet" type="submit">Delete file</button></form>
-        </div></td>
-    </tr>
-    {% endfor %}
-    </tbody>
-</table>
-</div>
-{% else %}<div class="empty"><h2>No matching files</h2><p>Try another search or upload a file. Existing B2 files can be synchronized below.</p></div>{% endif %}
-<nav class="pagination" aria-label="File pages">
-    {% if page > 1 %}<a class="button secondary" href="{{ url_for('panel.files_ui', q=query, sort=sort, storage=storage, page=page-1) }}">Previous</a>{% endif %}
-    <span>Page {{ page }} of {{ pages }}</span>
-    {% if page < pages %}<a class="button secondary" href="{{ url_for('panel.files_ui', q=query, sort=sort, storage=storage, page=page+1) }}">Next</a>{% endif %}
-</nav>
-<section class="storage-tools"><h2>Storage tools</h2>
-    {% if config.use_b2_storage %}<form action="{{ url_for('panel.sync_files') }}" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="cursor" value="{{ cursor }}"><button class="secondary" type="submit">{{ 'Synchronize next 50 B2 files' if cursor else 'Synchronize B2 files' }}</button></form><p class="muted">Imports metadata in batches. File contents are fetched when requested.</p>{% endif %}
-    <form action="{{ url_for('panel.clear_cache_route') }}" method="post" data-confirm="Clear local storage? Files without a confirmed B2 backup will require a second confirmation."><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="danger secondary" type="submit">Clear local storage…</button></form>
-</section>
+    <div class="page-heading">
+        <h1>Files <span class="muted">{{ total }}</span></h1>
+        <a class="button" href="{{ url_for('panel.upload_ui') }}">Upload files</a>
+    </div>
+
+    <form class="filters" method="get" action="{{ url_for('panel.files_ui') }}">
+        <div>
+            <label for="search">Search files</label>
+            <input
+                id="search"
+                type="search"
+                name="q"
+                value="{{ query }}"
+                placeholder="Name or original filename"
+                maxlength="200"
+            >
+        </div>
+        <div>
+            <label for="sort">Sort by</label>
+            <select id="sort" name="sort">
+                {% for value, label in [
+                    ('newest', 'Newest first'),
+                    ('oldest', 'Oldest first'),
+                    ('name', 'Filename'),
+                    ('size', 'Largest first'),
+                    ('hits', 'Most requests')
+                ] %}
+                    <option value="{{ value }}" {% if sort == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div>
+            <label for="storage">Storage</label>
+            <select id="storage" name="storage">
+                {% for value, label in [
+                    ('all', 'All files'),
+                    ('local', 'Local only'),
+                    ('cached', 'Cached locally'),
+                    ('remote', 'B2 only')
+                ] %}
+                    <option value="{{ value }}" {% if storage == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <button type="submit" class="secondary">Apply filters</button>
+    </form>
+
+    {% if files %}
+        <form
+            id="bulk-files"
+            action="{{ url_for('panel.bulk_files') }}"
+            method="post"
+            class="bulk-controls"
+        >
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <label for="bulk-action">With selected</label>
+            <select id="bulk-action" name="action">
+                <option value="revoke">Revoke links</option>
+                <option value="delete">Permanently delete…</option>
+            </select>
+            <button type="submit" class="secondary">Continue</button>
+            <span class="muted">Up to 25 files per page</span>
+        </form>
+
+        <div class="table-scroll">
+            <table class="file-table">
+                <caption class="sr-only">Files in your library</caption>
+                <thead>
+                    <tr>
+                        <th scope="col"><span class="sr-only">Select</span></th>
+                        <th scope="col">File</th>
+                        <th scope="col">Size / storage</th>
+                        <th scope="col">Preview</th>
+                        <th scope="col">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for file in files %}
+                        <tr>
+                            <td data-label="Select">
+                                <input
+                                    type="checkbox"
+                                    name="filename"
+                                    value="{{ file.filename }}"
+                                    form="bulk-files"
+                                    aria-label="Select {{ file.filename }}"
+                                >
+                            </td>
+                            <td class="file-name" data-label="File">
+                                <a
+                                    class="file-title"
+                                    href="{{ url_for('files.get_file', filename=file.filename) }}"
+                                >
+                                    {{ file_icon(file.filename) }}
+                                    <span>{{ file.original_name or file.filename }}</span>
+                                </a>
+                                <small>{{ file.filename }}</small>
+                                <small>{{ file.created | date }}</small>
+
+                                {% if file.status == 'deleting' %}
+                                    <span class="badge warning">Deletion pending · retry Delete file</span>
+                                {% elif file.revoked %}
+                                    <span class="badge warning">Link revoked</span>
+                                {% elif file.expires and file.expires <= now %}
+                                    <span class="badge warning">Link expired</span>
+                                {% elif file.expires %}
+                                    <small>Expires {{ file.expires | date }}</small>
+                                {% endif %}
+                            </td>
+                            <td data-label="Size / storage">
+                                {{ file.size | filesize }}
+                                <small class="badge">{{ file.storage }}</small>
+                            </td>
+                            <td data-label="Preview" class="preview">
+                                {% if file.revoked or file.status == 'deleting' or (file.expires and file.expires <= now) %}
+                                    <span class="muted">Link disabled</span>
+                                {% elif file.is_image %}
+                                    <a href="{{ url_for('files.get_file', filename=file.filename) }}">
+                                        <img
+                                            src="{{ url_for('files.get_file_thumbnail', filename=file.filename) }}"
+                                            alt="Preview of {{ file.original_name or file.filename }}"
+                                            width="144"
+                                            height="96"
+                                            loading="lazy"
+                                        >
+                                    </a>
+                                {% elif file.is_video %}
+                                    <video
+                                        controls
+                                        preload="none"
+                                        src="{{ url_for('files.get_file', filename=file.filename) }}"
+                                        aria-label="Preview of {{ file.filename }}"
+                                    ></video>
+                                {% else %}
+                                    <span class="muted">{{ (file.filename | file_type)[1] }}</span>
+                                {% endif %}
+                            </td>
+                            <td data-label="Actions">
+                                <div class="actions">
+                                    <button type="button" class="secondary" data-copy="{{ file.url }}">
+                                        Copy link
+                                    </button>
+                                    <a
+                                        class="button quiet"
+                                        href="{{ url_for('files.get_file', filename=file.filename) }}"
+                                    >
+                                        Open
+                                    </a>
+                                    <a
+                                        class="button quiet"
+                                        href="{{ url_for('files.get_file', filename=file.filename, download=1) }}"
+                                    >
+                                        Download
+                                    </a>
+                                    <form
+                                        action="{{ url_for('panel.change_link', filename=file.filename) }}"
+                                        method="post"
+                                    >
+                                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                        <button class="quiet" type="submit">
+                                            {{ 'Restore link' if file.revoked else 'Revoke link' }}
+                                        </button>
+                                    </form>
+
+                                    {% if file.backed_up and file.cached %}
+                                        <form
+                                            action="{{ url_for('panel.delete_cache_file', filename=file.filename) }}"
+                                            method="post"
+                                            data-confirm="Remove the cached copy of {{ file.filename }}? Its B2 backup and share link will remain available."
+                                        >
+                                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                            <button class="quiet" type="submit">Remove cached copy</button>
+                                        </form>
+                                    {% endif %}
+
+                                    <form
+                                        action="{{ url_for('panel.delete_file', filename=file.filename) }}"
+                                        method="post"
+                                        data-confirm="Permanently delete {{ file.filename }}{{ ' and all its B2 versions' if file.backed_up else ' from local storage' }}? This cannot be undone."
+                                    >
+                                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                        <button class="danger quiet" type="submit">Delete file</button>
+                                    </form>
+                                </div>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <div class="empty">
+            <h2>No matching files</h2>
+            <p>Try another search or upload a file. Existing B2 files can be synchronized below.</p>
+        </div>
+    {% endif %}
+
+    <nav class="pagination" aria-label="File pages">
+        {% if page > 1 %}
+            <a
+                class="button secondary"
+                href="{{ url_for('panel.files_ui', q=query, sort=sort, storage=storage, page=page - 1) }}"
+            >
+                Previous
+            </a>
+        {% endif %}
+
+        <span>Page {{ page }} of {{ pages }}</span>
+
+        {% if page < pages %}
+            <a
+                class="button secondary"
+                href="{{ url_for('panel.files_ui', q=query, sort=sort, storage=storage, page=page + 1) }}"
+            >
+                Next
+            </a>
+        {% endif %}
+    </nav>
+
+    <section class="storage-tools">
+        <h2>Storage tools</h2>
+
+        {% if config.use_b2_storage %}
+            <form action="{{ url_for('panel.sync_files') }}" method="post">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="cursor" value="{{ cursor }}">
+                <button class="secondary" type="submit">
+                    {{ 'Synchronize next 50 B2 files' if cursor else 'Synchronize B2 files' }}
+                </button>
+            </form>
+            <p class="muted">Imports metadata in batches. File contents are fetched when requested.</p>
+        {% endif %}
+
+        <form
+            action="{{ url_for('panel.clear_cache_route') }}"
+            method="post"
+            data-confirm="Clear local storage? Files without a confirmed B2 backup will require a second confirmation."
+        >
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="danger secondary" type="submit">Clear local storage…</button>
+        </form>
+    </section>
 {% endblock %}

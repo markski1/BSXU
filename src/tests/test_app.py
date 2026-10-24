@@ -35,7 +35,7 @@ class SecurityTests(unittest.TestCase):
         self.root = Path(self.temporary.name).resolve()
         self.assertTrue(self.root.is_relative_to(self.workspace))
         self.config = {
-            "AUTH_KEY": "u" * 40, "ADMIN_KEY": "a" * 40, "SECRET_KEY": "s" * 40,
+            "ADMIN_KEY": "a" * 40, "SECRET_KEY": "s" * 40,
             "URL_PATH": "https://localhost/", "CACHE_FOLDER": str(self.root / "cache"),
             "STATE_FOLDER": str(self.root / "state"), "MIN_FREE_DISK_MB": 0,
             "MAX_UPLOAD_SIZE_MB": 1, "CACHE_MAX_SIZE_MB": 4, "STAGING_MAX_SIZE_MB": 16,
@@ -44,6 +44,8 @@ class SecurityTests(unittest.TestCase):
         }
         self.app = create_app(self.config)
         self.app.logger.disabled = True
+        with self.app.app_context():
+            self.upload_key = create_upload_key("Test uploader")
         self.client = self.app.test_client()
         self.responses = []
 
@@ -105,10 +107,10 @@ class SecurityTests(unittest.TestCase):
         return re.search(r'name="csrf_token" value="([^"]+)"', response.text).group(1)
 
     def login(self):
-        return self.post("/panel/login", data={"csrf_token": self.csrf(), "auth_key": "a" * 40})
+        return self.post("/panel/login", data={"csrf_token": self.csrf(), "admin_key": "a" * 40})
 
     def upload(self, content=b"hello", name="fixture.txt"):
-        return self.post("/upload", headers={"Authorization": "Bearer " + "u" * 40},
+        return self.post("/upload", headers={"Authorization": "Bearer " + self.upload_key},
                          data={"fileupload": (io.BytesIO(content), name)})
 
     def stored_name(self, response):
@@ -119,8 +121,8 @@ class SecurityTests(unittest.TestCase):
         self.app.extensions["settings"] = replace(self.app.extensions["settings"], use_b2_storage=True)
         self.app.extensions["b2_bucket"] = bucket
 
-    def test_settings_reject_weak_and_shared_credentials(self):
-        for override in [{"AUTH_KEY": "ChangeMe!"}, {"ADMIN_KEY": "u" * 40}, {"SECRET_KEY": "short"}, {"USE_B2_STORAGE": "true|false"}]:
+    def test_settings_reject_weak_credentials_and_invalid_booleans(self):
+        for override in [{"ADMIN_KEY": "ChangeMe!"}, {"SECRET_KEY": "short"}, {"USE_B2_STORAGE": "true|false"}]:
             with self.assertRaises(RuntimeError):
                 Settings.load(self.config | override)
 
@@ -152,11 +154,75 @@ class SecurityTests(unittest.TestCase):
                 self.assertEqual(stream.count, 0)
             builder.close()
 
+    def test_retired_environment_key_cannot_authorize_uploads(self):
+        legacy_key = "legacy-upload-key-" + "x" * 32
+        self.app = create_app(self.config | {"AUTH_KEY": legacy_key})
+        self.app.logger.disabled = True
+        self.client = self.app.test_client()
+        for headers in ({"Authorization": "Bearer " + legacy_key}, {"X-Upload-Key": legacy_key}):
+            response, count = self.probe_upload_body("/upload", headers=headers)
+            self.assertEqual(response.status_code, 401)
+            self.assertEqual(count, 0)
+            self.assertEqual(self.get("/upload-auth", headers=headers).status_code, 401)
+        self.assert_no_upload_started()
+        self.assertEqual(self.upload().status_code, 200)
+
+    def test_secret_key_is_required_without_panel(self):
+        for secret in ("", "short"):
+            with self.assertRaisesRegex(RuntimeError, "SECRET_KEY"):
+                Settings.load(self.config | {"PANEL_ENABLED": "false", "ADMIN_KEY": "", "SECRET_KEY": secret})
+
+    def test_storage_paths_are_independent_of_working_directory(self):
+        expected = Path(__file__).resolve().parents[1]
+        config = self.config | {"CACHE_FOLDER": "cache", "STATE_FOLDER": "instance"}
+        with patch("os.getcwd", return_value=str(self.root)):
+            first = Settings.load(config)
+        with patch("os.getcwd", return_value=str(self.workspace)):
+            second = Settings.load(config)
+        self.assertEqual(first.cache_folder, expected / "cache")
+        self.assertEqual(first.state_folder, expected / "instance")
+        self.assertEqual(first.cache_folder, second.cache_folder)
+        self.assertEqual(first.state_folder, second.state_folder)
+
+    def test_upload_key_cli_bootstraps_without_panel_and_survives_restart(self):
+        config = self.config | {"PANEL_ENABLED": "false", "ADMIN_KEY": ""}
+        app = create_app(config)
+        app.logger.disabled = True
+        result = app.test_cli_runner().invoke(args=["create-upload-key", "Headless uploader"])
+        self.assertEqual(result.exit_code, 0, result.output)
+        key = result.output.strip()
+        self.assertRegex(key, r"^[A-Za-z0-9_-]{43}$")
+        self.app = create_app(config)
+        self.app.logger.disabled = True
+        self.client = self.app.test_client()
+        self.assertEqual(self.get("/panel/keys").status_code, 404)
+        self.assertEqual(self.get("/upload-auth", headers={"X-Upload-Key": key}).status_code, 204)
+        response = self.post("/upload", headers={"Authorization": "Bearer " + key},
+                             data={"fileupload": (io.BytesIO(b"hello"), "fixture.txt")})
+        self.assertEqual(response.status_code, 200)
+        with self.app.app_context(), closing(state.connect()) as connection:
+            row = connection.execute("SELECT token_hash FROM upload_keys WHERE label = 'Headless uploader'").fetchone()
+            self.assertIsNotNone(row)
+            self.assertNotEqual(row["token_hash"], key)
+            self.assertNotIn(key.encode(), (self.root / "state" / "storage.sqlite3").read_bytes())
+
+    def test_upload_key_creation_rejects_invalid_labels(self):
+        runner = self.app.test_cli_runner()
+        for label in (" ", "x" * 81):
+            result = runner.invoke(args=["create-upload-key", label])
+            self.assertNotEqual(result.exit_code, 0)
+            self.assertIn("between 1 and 80 characters", result.output)
+
+    def test_legacy_login_field_does_not_authenticate(self):
+        response = self.post("/panel/login", data={"csrf_token": self.csrf(), "auth_key": "a" * 40})
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(self.get("/panel/files").status_code, 302)
+
     def test_successful_upload_and_meaningful_errors(self):
         name = self.stored_name(self.upload())
         self.assertRegex(name, r"^[A-Za-z0-9]{12}\.txt$")
         self.assertEqual(self.get("/" + name).data, b"hello")
-        self.assertEqual(self.post("/upload", headers={"X-Upload-Key": "u" * 40}).status_code, 400)
+        self.assertEqual(self.post("/upload", headers={"X-Upload-Key": self.upload_key}).status_code, 400)
         self.assertEqual(self.upload(b"", "empty.txt").status_code, 400)
         self.assertEqual(self.upload(b"x", "noextension").status_code, 400)
 
@@ -168,7 +234,7 @@ class SecurityTests(unittest.TestCase):
 
     def test_upload_key_cannot_sign_in(self):
         token = self.csrf()
-        self.assertEqual(self.post("/panel/login", data={"csrf_token": token, "auth_key": "u" * 40}).status_code, 401)
+        self.assertEqual(self.post("/panel/login", data={"csrf_token": token, "admin_key": self.upload_key}).status_code, 401)
         self.assertEqual(self.get("/panel/files").status_code, 302)
 
     def test_admin_key_cannot_upload_through_api(self):
@@ -199,12 +265,12 @@ class SecurityTests(unittest.TestCase):
 
     def test_login_rate_limit(self):
         token = self.csrf()
-        responses = [self.post("/panel/login", data={"csrf_token": token, "auth_key": "wrong"}) for _ in range(6)]
+        responses = [self.post("/panel/login", data={"csrf_token": token, "admin_key": "wrong"}) for _ in range(6)]
         self.assertEqual([r.status_code for r in responses], [401] * 5 + [429])
         self.assertIn("Retry-After", responses[-1].headers)
 
     def test_login_body_is_small(self):
-        response = self.post("/panel/login", data={"auth_key": "x" * 70000})
+        response = self.post("/panel/login", data={"admin_key": "x" * 70000})
         self.assertEqual(response.status_code, 413)
 
     def test_logout_redirects_to_login_and_revokes_session(self):
@@ -220,7 +286,7 @@ class SecurityTests(unittest.TestCase):
         second = self.app.test_client()
         response = second.get("/panel/", base_url="https://localhost")
         token = re.search(r'name="csrf_token" value="([^"]+)"', response.text).group(1)
-        second.post("/panel/login", data={"csrf_token": token, "auth_key": "a" * 40}, base_url="https://localhost")
+        second.post("/panel/login", data={"csrf_token": token, "admin_key": "a" * 40}, base_url="https://localhost")
         self.assertEqual(self.get("/panel/main").status_code, 200)
 
     def test_containment_and_alias_paths_are_rejected(self):
@@ -325,6 +391,23 @@ class SecurityTests(unittest.TestCase):
                 connection.execute("INSERT INTO staging VALUES (?, ?, ?)", ("a" * 32, 6, time.time() - 1))
             cache.recover_staging()
         self.assertFalse(directory.exists())
+
+    def test_reconciliation_frees_capacity_for_missing_local_files(self):
+        self.app.extensions["settings"] = replace(self.app.extensions["settings"], cache_max_size_mb=1)
+        name = self.stored_name(self.upload(b"a" * 600000))
+        (self.root / "cache" / name).unlink()
+        with self.app.app_context():
+            cache.reconcile_cache()
+            row = state.file_record(name)
+            self.assertEqual(row["cached"], 0)
+            self.assertEqual(row["status"], "available")
+        self.assertEqual(self.upload(b"b" * 600000).status_code, 200)
+        self.login()
+        self.assertIn("Unavailable", self.get("/panel/files").text)
+
+    def test_unindexed_local_file_returns_not_found(self):
+        (self.root / "cache" / "unindexed.txt").write_bytes(b"not imported")
+        self.assertEqual(self.get("/unindexed.txt").status_code, 404)
 
     def test_public_misses_are_cached_and_locks_are_bounded(self):
         bucket = Mock()
@@ -437,15 +520,26 @@ class SecurityTests(unittest.TestCase):
             connection.execute("UPDATE uploaded_names SET revoked = 0, expires = ? WHERE filename = ?", (time.time() - 1, name))
         self.assertEqual(self.get("/" + name).status_code, 404)
 
-    def test_device_key_is_upload_only_and_revocable(self):
-        with self.app.app_context():
-            key = create_upload_key("Laptop")
+    def test_upload_key_is_upload_only_and_revocable(self):
+        self.login()
+        token = self.csrf("/panel/keys")
+        result = self.post("/panel/keys/create", data={"csrf_token": token, "label": "Laptop"})
+        self.assertEqual(result.status_code, 201)
+        self.assertIn("Upload key created", result.text)
+        key = re.search(r"<code>([A-Za-z0-9_-]{43})</code>", result.text).group(1)
+        listing = self.get("/panel/keys")
+        self.assertIn("Upload keys", listing.text)
+        self.assertIn("Laptop", listing.text)
+        self.assertNotIn(key, listing.text)
         response = self.post("/upload", headers={"X-Upload-Key": key},
                              data={"fileupload": (io.BytesIO(b"hello"), "fixture.txt")})
         self.assertEqual(response.status_code, 200)
-        with self.app.app_context(), state.transaction() as connection:
-            connection.execute("DELETE FROM upload_keys")
+        with self.app.app_context(), closing(state.connect()) as connection:
+            key_id = connection.execute("SELECT id FROM upload_keys WHERE label = 'Laptop'").fetchone()[0]
+        result = self.post("/panel/keys/revoke/" + key_id, data={"csrf_token": token})
+        self.assertEqual(result.status_code, 303)
         self.assertEqual(self.post("/upload", headers={"X-Upload-Key": key}).status_code, 401)
+        self.assertEqual(self.upload().status_code, 200)
 
     def test_persistent_counts_exclude_head_range_and_304(self):
         name = self.stored_name(self.upload(b"0123456789", "fixture.mp4"))
@@ -552,10 +646,60 @@ class SecurityTests(unittest.TestCase):
         self.assertEqual(self.get("/remote.txt").data, b"hello")
         self.assertEqual(bucket.download_file_by_name.call_count, 1)
 
+    def test_remote_download_streams_when_local_storage_is_full(self):
+        bucket = Mock()
+        bucket.get_file_info_by_name.return_value = SimpleNamespace(content_length=5, file_info={}, upload_timestamp=1700000000000)
+        stream = Mock()
+        stream.headers = {"Content-Length": "5"}
+        stream.iter_content.side_effect = lambda *args: iter([b"hello"])
+        bucket.download_file_by_name.return_value = SimpleNamespace(response=stream)
+        self.enable_b2(bucket)
+        with patch("core.b2connect.publish_cache", side_effect=AppError("Storage is full.", 507)):
+            response = self.get("/remote.txt")
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.data, b"hello")
+        self.assertFalse((self.root / "cache" / "remote.txt").exists())
+        with self.app.app_context(), closing(state.connect("controls.sqlite3")) as connection:
+            self.assertEqual(connection.execute("SELECT count(*) FROM leases").fetchone()[0], 0)
+
+    def test_remote_download_streams_when_staging_is_full(self):
+        bucket = Mock()
+        bucket.get_file_info_by_name.return_value = SimpleNamespace(content_length=5, file_info={}, upload_timestamp=1700000000000)
+        stream = Mock()
+        stream.headers = {"Content-Length": "5"}
+        stream.iter_content.return_value = [b"hello"]
+        bucket.download_file_by_name.return_value = SimpleNamespace(response=stream)
+        self.enable_b2(bucket)
+        with patch("core.b2connect.staged_file", side_effect=AppError("Temporary storage is busy.", 503)):
+            response = self.get("/remote.txt")
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.data, b"hello")
+        bucket.download_file_by_name.assert_called_once_with(file_name="remote.txt", range_=None)
+
+    def test_remote_download_does_not_bypass_transfer_limit(self):
+        bucket = Mock()
+        bucket.get_file_info_by_name.return_value = SimpleNamespace(content_length=5, file_info={}, upload_timestamp=1700000000000)
+        self.enable_b2(bucket)
+        with self.app.app_context(), ExitStack() as stack:
+            for _ in range(8):
+                stack.enter_context(controls.lease("downloads", 8))
+            self.assertEqual(self.get("/remote.txt").status_code, 503)
+        bucket.download_file_by_name.assert_not_called()
+
+    def test_incomplete_remote_download_is_not_retried_as_a_stream(self):
+        bucket = Mock()
+        bucket.get_file_info_by_name.return_value = SimpleNamespace(content_length=5, file_info={}, upload_timestamp=1700000000000)
+        stream = Mock()
+        stream.iter_content.return_value = [b"hi"]
+        bucket.download_file_by_name.return_value = SimpleNamespace(response=stream)
+        self.enable_b2(bucket)
+        self.assertEqual(self.get("/remote.txt").status_code, 503)
+        bucket.download_file_by_name.assert_called_once_with(file_name="remote.txt")
+
     def test_upload_auth_subrequest_and_form_key_rejection(self):
         self.assertEqual(self.get("/upload-auth").status_code, 401)
-        self.assertEqual(self.get("/upload-auth", headers={"X-Upload-Key": "u" * 40}).status_code, 204)
-        self.assertEqual(self.post("/upload", data={"key": "u" * 40, "fileupload": (io.BytesIO(b"hello"), "fixture.txt")}).status_code, 401)
+        self.assertEqual(self.get("/upload-auth", headers={"X-Upload-Key": self.upload_key}).status_code, 204)
+        self.assertEqual(self.post("/upload", data={"key": self.upload_key, "fileupload": (io.BytesIO(b"hello"), "fixture.txt")}).status_code, 401)
         with self.assertRaises(RuntimeError):
             Settings.load(self.config | {"LEGACY_UPLOAD_MAX_MB": 1})
 
@@ -582,16 +726,16 @@ class SecurityTests(unittest.TestCase):
         self.assertFalse(bucket.mock_calls)
 
     def test_form_keys_and_query_keys_cannot_start_uploads(self):
-        for path in ("/upload", "/upload?key=" + "u" * 40):
-            response, count = self.probe_upload_body(path, fields={"key": "u" * 40})
+        for path in ("/upload", "/upload?key=" + self.upload_key):
+            response, count = self.probe_upload_body(path, fields={"key": self.upload_key})
             self.assertEqual(response.status_code, 401)
             self.assertEqual(count, 0)
         self.assert_no_upload_started()
 
     def test_conflicting_and_malformed_auth_headers_do_not_read_body(self):
         cases = [
-            {"Authorization": "Bearer " + "u" * 40, "X-Upload-Key": "u" * 40},
-            {"Authorization": "Basic " + "u" * 40},
+            {"Authorization": "Bearer " + self.upload_key, "X-Upload-Key": self.upload_key},
+            {"Authorization": "Basic " + self.upload_key},
             {"Authorization": "Bearer "},
         ]
         for headers in cases:
@@ -643,11 +787,11 @@ class SecurityTests(unittest.TestCase):
 
     def test_credential_upload_limit_cannot_be_bypassed_by_rotating_ip(self):
         for index in range(5):
-            response = self.post("/upload", headers={"X-Upload-Key": "u" * 40},
+            response = self.post("/upload", headers={"X-Upload-Key": self.upload_key},
                                  data={"fileupload": (io.BytesIO(b"hello"), "fixture.txt")},
                                  environ_overrides={"REMOTE_ADDR": f"10.0.0.{index + 1}"})
             self.assertEqual(response.status_code, 200)
-        response, count = self.probe_upload_body("/upload", headers={"X-Upload-Key": "u" * 40}, address="10.0.0.99")
+        response, count = self.probe_upload_body("/upload", headers={"X-Upload-Key": self.upload_key}, address="10.0.0.99")
         self.assertEqual(response.status_code, 429)
         self.assertGreater(int(response.headers["Retry-After"]), 0)
         self.assertEqual(count, 0)
@@ -706,7 +850,7 @@ class SecurityTests(unittest.TestCase):
         with self.app.app_context(), ExitStack() as stack:
             for _ in range(2):
                 stack.enter_context(controls.lease("upload-requests", 2))
-            response, count = self.probe_upload_body("/upload", headers={"X-Upload-Key": "u" * 40})
+            response, count = self.probe_upload_body("/upload", headers={"X-Upload-Key": self.upload_key})
             self.assertEqual(response.status_code, 503)
             self.assertEqual(count, 0)
 

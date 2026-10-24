@@ -6,6 +6,7 @@ import time
 from flask_login import LoginManager, UserMixin
 
 from core.config import settings
+from core.errors import AppError
 from core.state import connect, transaction
 
 
@@ -52,8 +53,6 @@ def revoke_session(token):
 def upload_authorized(key):
     if not key or len(key) > 256:
         return False
-    if secrets.compare_digest(key.encode(), settings().auth_key.encode()):
-        return True
     digest = hash_token(key)
     with transaction() as connection:
         row = connection.execute("SELECT id FROM upload_keys WHERE token_hash = ?", (digest,)).fetchone()
@@ -63,12 +62,14 @@ def upload_authorized(key):
 
 
 def create_upload_key(label):
+    label = label.strip()
+    if not label or len(label) > 80:
+        raise AppError("Give the upload key a name between 1 and 80 characters.")
     token = secrets.token_urlsafe(32)
     with transaction() as connection:
         count = connection.execute("SELECT count(*) FROM upload_keys").fetchone()[0]
         if count >= 50:
-            from core.errors import AppError
-            raise AppError("Revoke an unused device key before adding another.")
+            raise AppError("Revoke an unused upload key before adding another.")
         connection.execute("INSERT INTO upload_keys (id, label, token_hash, created) VALUES (?, ?, ?, ?)",
-                           (secrets.token_hex(8), label[:80], hash_token(token), time.time()))
+                           (secrets.token_hex(8), label, hash_token(token), time.time()))
     return token

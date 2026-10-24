@@ -56,6 +56,14 @@ td { padding: .4rem; vertical-align: top; border-bottom: 1px solid #e5e9ef; }
 .file-name { min-width: 0; overflow-wrap: anywhere; max-width: 300px; }
 .file-name > a:first-child { font-weight: 600; }
 .file-name small { overflow-wrap: anywhere; }
+.file-title { display: inline-flex; align-items: flex-start; gap: .3rem; max-width: 100%; }
+.file-title > span { min-width: 0; }
+.file-icon { flex: 0 0 18px; fill: none; stroke: currentColor; stroke-width: 1.5; color: var(--muted); }
+.file-icon-image, .file-icon-video, .file-icon-presentation { color: #7251a1; }
+.file-icon-audio, .file-icon-pdf { color: #a32133; }
+.file-icon-document, .file-icon-font { color: #3456ac; }
+.file-icon-spreadsheet { color: #18714e; }
+.file-icon-archive { color: #885b16; }
 .preview { width: 96px; }
 .preview img, .preview video { display: block; width: 80px; max-width: 100%; height: 48px; object-fit: contain; background: #eef1f5; }
 .actions { display: flex; flex-wrap: wrap; gap: .2rem; align-items: center; }

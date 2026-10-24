@@ -1,13 +1,41 @@
 {% extends "layout.jinja2" %}
+
 {% block title %}Confirm deletion{% endblock %}
+
 {% block main %}
-<h1>Permanently delete files?</h1>
-<p class="notice error">This cannot be undone. The selected files and their B2 versions, where applicable, will be deleted.</p>
-<ul class="file-list">{% for filename in filenames %}<li>{{ filename }}</li>{% endfor %}</ul>
-{% if clear_all %}<p>These files have no confirmed B2 backup. Other local cached copies will also be removed.</p>{% endif %}
-<form action="{{ url_for('panel.clear_cache_route') if clear_all else url_for('panel.bulk_files') }}" method="post">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="confirmation" value="delete"><input type="hidden" name="action" value="delete">
-    {% if not clear_all %}{% for filename in filenames %}<input type="hidden" name="filename" value="{{ filename }}">{% endfor %}{% endif %}
-    <div class="actions"><button type="submit" class="danger">Permanently delete {{ filenames|length }} files</button><a class="button secondary" href="{{ url_for('panel.files_ui') }}">Cancel</a></div>
-</form>
+    <h1>Permanently delete files?</h1>
+    <p class="notice error">
+        This cannot be undone.
+        The selected files and their B2 versions, where applicable, will be deleted.
+    </p>
+
+    <ul class="file-list">
+        {% for filename in filenames %}
+            <li>{{ filename }}</li>
+        {% endfor %}
+    </ul>
+
+    {% if clear_all %}
+        <p>These files have no confirmed B2 backup. Other local cached copies will also be removed.</p>
+    {% endif %}
+
+    <form
+        action="{{ url_for('panel.clear_cache_route') if clear_all else url_for('panel.bulk_files') }}"
+        method="post"
+    >
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="confirmation" value="delete">
+        <input type="hidden" name="action" value="delete">
+
+        {% if not clear_all %}
+            {% for filename in filenames %}
+                <input type="hidden" name="filename" value="{{ filename }}">
+            {% endfor %}
+        {% endif %}
+
+        <div class="actions">
+            <button type="submit" class="danger">Permanently delete {{ filenames | length }} files</button>
+            <a class="button secondary" href="{{ url_for('panel.files_ui') }}">Cancel</a>
+        </div>
+    </form>
 {% endblock %}

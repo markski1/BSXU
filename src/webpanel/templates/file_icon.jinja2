@@ -1,0 +1,14 @@
+{% macro file_icon(filename) -%}
+    {% set kind, label = filename | file_type -%}
+    <svg
+        class="file-icon file-icon-{{ kind }}"
+        width="18"
+        height="18"
+        viewBox="0 0 24 24"
+        role="img"
+        aria-label="{{ label }}"
+    >
+        <title>{{ label }}</title>
+        <use href="{{ url_for('static', filename='file-icons.svg') }}#{{ kind }}"></use>
+    </svg>
+{%- endmacro %}

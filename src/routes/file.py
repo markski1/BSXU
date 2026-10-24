@@ -49,6 +49,8 @@ def etag_for(filename, size, created, digest=""):
 
 def send_uploaded_file(filepath, filename):
     row = file_record(filename)
+    if row is None:
+        raise NotFound()
     mimetype = MIMETYPES.get(Path(filename).suffix.lower())
     response = send_file(
         filepath, mimetype=mimetype or "application/octet-stream",
@@ -183,9 +185,15 @@ def get_file(filename):
         raise NotFound()
     b2connect.remember_remote(remote)
     if request.method != "HEAD" and "Range" not in request.headers and remote.size <= 8 * 1024 * 1024:
-        with lease("downloads", 8):
-            target = b2connect.b2_cache_file(filename, remote)
-        return send_uploaded_file(target, filename)
+        try:
+            with lease("downloads", 8):
+                target = b2connect.b2_cache_file(filename, remote)
+            return send_uploaded_file(target, filename)
+        except AppError as exception:
+            if isinstance(exception, BackendError) or exception.status not in {503, 507}:
+                raise
+        except FileNotFoundError:
+            pass
     return remote_response(filename, remote)
 
 

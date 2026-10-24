@@ -10,7 +10,7 @@ from flask import current_app
 from core.cache import cache_filepath, delete_thumbnail, publish_cache, staged_file
 from core.config import settings
 from core.controls import forget_missing, mark_missing, missing
-from core.errors import BackendError, NotFound
+from core.errors import AppError, BackendError, NotFound
 from core.state import connect, file_lock, file_record, transaction
 from misc import wh_report
 
@@ -104,7 +104,7 @@ def b2_cache_file(filename, remote):
         except FileNotPresent as exception:
             mark_missing(filename)
             raise NotFound() from exception
-        except (BackendError, NotFound):
+        except AppError:
             raise
         except Exception as exception:
             raise BackendError() from exception

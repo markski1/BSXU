@@ -9,7 +9,6 @@ from flask import current_app
 
 @dataclass(frozen=True)
 class Settings:
-    auth_key: str
     admin_key: str
     secret_key: str
     url_path: str
@@ -66,18 +65,16 @@ class Settings:
         panel = boolean("PANEL_ENABLED", True)
         if text("LEGACY_UPLOAD_MAX_MB", "0") not in {"", "0"}:
             raise RuntimeError("Form-key uploads are no longer supported. Use an authentication header.")
-        upload_key = secret("AUTH_KEY")
         admin_key = secret("ADMIN_KEY", panel)
-        if panel and admin_key == upload_key:
-            raise RuntimeError("ADMIN_KEY must be different from AUTH_KEY.")
         url = text("URL_PATH")
         parts = urlsplit(url)
         if parts.scheme not in {"http", "https"} or not parts.netloc or parts.query or parts.fragment or parts.username:
             raise RuntimeError("URL_PATH must be an http(s) URL without credentials, query or fragment.")
         if parts.path not in {"", "/"}:
             raise RuntimeError("URL_PATH must use the root of a dedicated host.")
-        cache = Path(text("CACHE_FOLDER", "./cache")).resolve()
-        state = Path(text("STATE_FOLDER", "./instance")).resolve()
+        application_folder = Path(__file__).resolve().parents[1]
+        cache = (application_folder / text("CACHE_FOLDER", "cache")).resolve()
+        state = (application_folder / text("STATE_FOLDER", "instance")).resolve()
         if state.is_relative_to(cache) or cache.is_relative_to(state):
             raise RuntimeError("STATE_FOLDER and CACHE_FOLDER must be separate directories.")
         upload_limit = positive("MAX_UPLOAD_SIZE_MB", 128)
@@ -89,7 +86,7 @@ class Settings:
         if webhook != "false" and urlsplit(webhook).scheme != "https":
             raise RuntimeError("WEBHOOK_URL must be https or false.")
         return cls(
-            upload_key, admin_key, secret("SECRET_KEY", panel), url.rstrip("/") + "/",
+            admin_key, secret("SECRET_KEY"), url.rstrip("/") + "/",
             cache, state, b2, panel, boolean("SESSION_COOKIE_SECURE", True),
             positive("NAME_LENGTH", 12, 12), positive("CACHE_MAX_SIZE_MB", 2048),
             upload_limit, positive("STAGING_MAX_SIZE_MB", upload_limit * 8 + 8),

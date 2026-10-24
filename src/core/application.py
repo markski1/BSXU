@@ -5,6 +5,7 @@ import secrets
 import time
 from urllib.parse import urlsplit
 
+import click
 from flask import Flask, g, jsonify, redirect, render_template, request, url_for
 from werkzeug.exceptions import HTTPException
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -34,7 +35,7 @@ def create_app(overrides=None):
     app.logger.setLevel(logging.INFO)
     app.extensions["settings"] = config
     app.config.update(
-        SECRET_KEY=config.secret_key or secrets.token_urlsafe(32),
+        SECRET_KEY=config.secret_key,
         MAX_CONTENT_LENGTH=(config.max_upload_size_mb + 1) * 1024 * 1024,
         MAX_FORM_MEMORY_SIZE=64 * 1024, MAX_FORM_PARTS=20,
         SESSION_COOKIE_SECURE=config.cookie_secure, SESSION_COOKIE_HTTPONLY=True,
@@ -136,13 +137,13 @@ def create_app(overrides=None):
     def handle_application_error(error):
         if error.retry_after is not None:
             g.retry_after = error.retry_after
-        if request.path.startswith("/panel") and request.headers.get("X-Requested-With") != "XMLHttpRequest":
+        if config.panel_enabled and request.path.startswith("/panel") and request.headers.get("X-Requested-With") != "XMLHttpRequest":
             return render_template("result.jinja2", result_title="Request failed", result_outcome=str(error)), error.status
         return str(error), error.status, {"Content-Type": "text/plain; charset=utf-8"}
 
     @app.errorhandler(HTTPException)
     def handle_http_error(error):
-        if request.path.startswith("/panel"):
+        if config.panel_enabled and request.path.startswith("/panel"):
             return render_template("result.jinja2", result_title=error.name, result_outcome=error.description), error.code
         return error.description, error.code, {"Content-Type": "text/plain; charset=utf-8"}
 
@@ -164,6 +165,16 @@ def create_app(overrides=None):
     def date(value):
         from datetime import datetime, timezone
         return datetime.fromtimestamp(value, timezone.utc).strftime("%Y-%m-%d %H:%M UTC") if value else "—"
+
+    @app.cli.command("create-upload-key")
+    @click.argument("label")
+    def create_upload_key_command(label):
+        """Create a named upload-only key and display it once."""
+        try:
+            key = session.create_upload_key(label)
+        except AppError as exception:
+            raise click.ClickException(str(exception)) from exception
+        click.echo(key)
 
     @app.cli.command("maintenance")
     def maintenance():
