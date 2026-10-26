@@ -1,5 +1,6 @@
 from contextlib import closing, contextmanager
 import hashlib
+import math
 import secrets
 import threading
 import time
@@ -19,7 +20,8 @@ def rate_limit(scope, identifier, limit, seconds=60):
         connection.execute("DELETE FROM limits WHERE expires <= ?", (now,))
         count = connection.execute("SELECT count FROM limits WHERE key = ?", (key,)).fetchone()
         if count and count[0] >= limit:
-            raise AppError("Too many requests. Please retry later.", 429)
+            retry_after = max(1, math.ceil((int(now // seconds) + 1) * seconds - now))
+            raise AppError("Too many requests. Please retry later.", 429, retry_after=retry_after)
         connection.execute(
             "INSERT INTO limits VALUES (?, 1, ?) ON CONFLICT(key) DO UPDATE SET count = count + 1",
             (key, (int(now // seconds) + 1) * seconds),
@@ -67,12 +69,13 @@ def lease(kind, limit, duration=300):
                 app.logger.exception("Could not renew an active resource lease.")
 
     worker = threading.Thread(target=heartbeat, daemon=True, name="bsxu-lease")
-    worker.start()
     try:
+        worker.start()
         yield token
     finally:
         stopped.set()
-        worker.join(timeout=1)
+        if worker.ident is not None:
+            worker.join(timeout=1)
         with transaction("controls.sqlite3") as connection:
             connection.execute("DELETE FROM leases WHERE id = ?", (token,))
 

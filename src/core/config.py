@@ -17,6 +17,7 @@ class Settings:
     use_b2_storage: bool
     panel_enabled: bool
     cookie_secure: bool
+    trust_proxy_headers: bool
     name_length: int
     cache_max_size_mb: int
     max_upload_size_mb: int
@@ -62,16 +63,29 @@ class Settings:
                 raise RuntimeError(f"Set {name} to a unique random secret of at least 32 characters.")
             return value
 
+        def validate_url(value, schemes, name):
+            if any(character.isspace() for character in value):
+                raise RuntimeError(f"{name} must not contain unescaped whitespace.")
+            try:
+                parsed = urlsplit(value)
+                port = parsed.port
+            except ValueError as exception:
+                raise RuntimeError(f"{name} must contain a valid hostname and port.") from exception
+            if (parsed.scheme not in schemes or not parsed.hostname or port == 0
+                    or parsed.username is not None or parsed.password is not None or parsed.fragment):
+                raise RuntimeError(f"{name} must be a valid URL without credentials or a fragment.")
+            return parsed
+
         panel = boolean("PANEL_ENABLED", True)
         if text("LEGACY_UPLOAD_MAX_MB", "0") not in {"", "0"}:
             raise RuntimeError("Form-key uploads are no longer supported. Use an authentication header.")
         admin_key = secret("ADMIN_KEY", panel)
+        if len(admin_key) > 256:
+            raise RuntimeError("ADMIN_KEY must not exceed 256 characters.")
         url = text("URL_PATH")
-        parts = urlsplit(url)
-        if parts.scheme not in {"http", "https"} or not parts.netloc or parts.query or parts.fragment or parts.username:
-            raise RuntimeError("URL_PATH must be an http(s) URL without credentials, query or fragment.")
-        if parts.path not in {"", "/"}:
-            raise RuntimeError("URL_PATH must use the root of a dedicated host.")
+        parts = validate_url(url, {"http", "https"}, "URL_PATH")
+        if parts.path not in {"", "/"} or parts.query:
+            raise RuntimeError("URL_PATH must use the root of a dedicated host without a query.")
         application_folder = Path(__file__).resolve().parents[1]
         cache = (application_folder / text("CACHE_FOLDER", "cache")).resolve()
         state = (application_folder / text("STATE_FOLDER", "instance")).resolve()
@@ -83,16 +97,34 @@ class Settings:
         if b2 and not all(b2_values):
             raise RuntimeError("B2_KEY_ID, B2_APP_KEY and B2_BUCKET_NAME are required for B2.")
         webhook = text("WEBHOOK_URL", "false")
-        if webhook != "false" and urlsplit(webhook).scheme != "https":
-            raise RuntimeError("WEBHOOK_URL must be https or false.")
+        if webhook != "false":
+            validate_url(webhook, {"https"}, "WEBHOOK_URL")
+        name_length = positive("NAME_LENGTH", 12, 12)
+        if name_length > 150:
+            raise RuntimeError("NAME_LENGTH must not exceed 150 characters.")
         return cls(
-            admin_key, secret("SECRET_KEY"), url.rstrip("/") + "/",
-            cache, state, b2, panel, boolean("SESSION_COOKIE_SECURE", True),
-            positive("NAME_LENGTH", 12, 12), positive("CACHE_MAX_SIZE_MB", 2048),
-            upload_limit, positive("STAGING_MAX_SIZE_MB", upload_limit * 8 + 8),
-            positive("MIN_FREE_DISK_MB", 64, 0), positive("IMAGE_MAX_PIXELS", 40_000_000),
-            positive("IMAGE_MAX_FRAMES", 100), positive("IMAGE_TIMEOUT_SECONDS", 20),
-            *b2_values, webhook, text("WEBHOOK_PARAM", "content"),
+            admin_key=admin_key,
+            secret_key=secret("SECRET_KEY"),
+            url_path=url.rstrip("/") + "/",
+            cache_folder=cache,
+            state_folder=state,
+            use_b2_storage=b2,
+            panel_enabled=panel,
+            cookie_secure=boolean("SESSION_COOKIE_SECURE", True),
+            trust_proxy_headers=boolean("TRUST_PROXY_HEADERS", False),
+            name_length=name_length,
+            cache_max_size_mb=positive("CACHE_MAX_SIZE_MB", 2048),
+            max_upload_size_mb=upload_limit,
+            staging_max_size_mb=positive("STAGING_MAX_SIZE_MB", upload_limit * 8 + 8),
+            min_free_disk_mb=positive("MIN_FREE_DISK_MB", 64, 0),
+            image_max_pixels=positive("IMAGE_MAX_PIXELS", 40_000_000),
+            image_max_frames=positive("IMAGE_MAX_FRAMES", 100),
+            image_timeout=positive("IMAGE_TIMEOUT_SECONDS", 20),
+            b2_key_id=b2_values[0],
+            b2_app_key=b2_values[1],
+            b2_bucket_name=b2_values[2],
+            webhook_url=webhook,
+            webhook_param=text("WEBHOOK_PARAM", "content"),
         )
 
 

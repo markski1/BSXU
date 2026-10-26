@@ -43,8 +43,7 @@ def create_app(overrides=None):
         SESSION_COOKIE_PATH="/panel", PERMANENT_SESSION_LIFETIME=timedelta(hours=8),
         TRUSTED_HOSTS=[urlsplit(config.url_path).hostname], TESTING=bool((overrides or {}).get("TESTING", False)),
     )
-    if str((overrides or {}).get("TRUST_PROXY_HEADERS", "false")).lower() == "true" or (
-            overrides is None and __import__("os").getenv("TRUST_PROXY_HEADERS", "false").lower() == "true"):
+    if config.trust_proxy_headers:
         app.wsgi_app = LoopbackProxy(app.wsgi_app)
     from core import b2connect, cache, session, state
     from routes.file import file_bp
@@ -114,7 +113,7 @@ def create_app(overrides=None):
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "no-referrer"
         response.headers["X-Request-ID"] = g.get("request_id", "")
-        if request.path.startswith("/panel"):
+        if request.path == "/panel" or request.path.startswith("/panel/"):
             response.headers["Cache-Control"] = "no-store"
             response.headers["X-Frame-Options"] = "DENY"
             response.headers["Content-Security-Policy"] = (
@@ -124,7 +123,7 @@ def create_app(overrides=None):
             )
         if request.is_secure:
             response.headers["Strict-Transport-Security"] = "max-age=31536000"
-        if response.status_code in {429, 503}:
+        if response.status_code in {429, 503} and "Retry-After" not in response.headers:
             response.headers["Retry-After"] = str(g.get("retry_after", 60))
         app.logger.info(json.dumps({
             "request_id": g.get("request_id"), "method": request.method,
@@ -134,18 +133,29 @@ def create_app(overrides=None):
         return response
 
     @app.errorhandler(AppError)
-    def handle_application_error(error):
-        if error.retry_after is not None:
-            g.retry_after = error.retry_after
-        if config.panel_enabled and request.path.startswith("/panel") and request.headers.get("X-Requested-With") != "XMLHttpRequest":
-            return render_template("result.jinja2", result_title="Request failed", result_outcome=str(error)), error.status
-        return str(error), error.status, {"Content-Type": "text/plain; charset=utf-8"}
-
     @app.errorhandler(HTTPException)
-    def handle_http_error(error):
-        if config.panel_enabled and request.path.startswith("/panel"):
-            return render_template("result.jinja2", result_title=error.name, result_outcome=error.description), error.code
-        return error.description, error.code, {"Content-Type": "text/plain; charset=utf-8"}
+    def handle_application_error(error):
+        if isinstance(error, HTTPException):
+            response = error.get_response()
+            message, title = error.description, error.name
+        else:
+            response = app.make_response(("", error.status))
+            message, title = str(error), "Request failed"
+            if error.retry_after is not None:
+                g.retry_after = error.retry_after
+
+        panel_request = request.path == "/panel" or request.path.startswith("/panel/")
+        if config.panel_enabled and panel_request:
+            if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+                response.set_data(app.json.dumps({"error": message}))
+                response.mimetype = "application/json"
+            else:
+                response.set_data(render_template("result.jinja2", result_title=title, result_outcome=message))
+                response.mimetype = "text/html"
+        else:
+            response.set_data(message)
+            response.mimetype = "text/plain"
+        return response
 
     @app.errorhandler(Exception)
     def handle_unexpected_error(error):

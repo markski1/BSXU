@@ -23,11 +23,23 @@ def process_image(source, extension):
     with lease("images", 2):
         try:
             result = subprocess.run(
-                [sys.executable, "-I", str(Path(__file__).with_name("media_worker.py")),
-                 str(source), str(destination), str(thumbnail), extension,
-                 str(config.image_max_pixels), str(config.image_max_frames),
-                 str(config.max_upload_size_mb * 1024 * 1024), str(config.image_timeout)],
-                timeout=config.image_timeout + 2, capture_output=True, check=False,
+                [
+                    sys.executable,
+                    "-I",
+                    str(Path(__file__).with_name("media_worker.py")),
+                    str(source),
+                    str(destination),
+                    str(thumbnail),
+                    extension,
+                    str(config.image_max_pixels),
+                    str(config.image_max_frames),
+                    str(config.max_upload_size_mb * 1024 * 1024),
+                    str(config.image_timeout),
+                ],
+                timeout=config.image_timeout + 2,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False,
             )
         except subprocess.TimeoutExpired as exception:
             raise AppError("Image processing timed out. Use a smaller image.", 422) from exception

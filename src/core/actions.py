@@ -11,7 +11,7 @@ from core.config import settings
 from core.controls import forget_missing, lease
 from core.errors import AppError, BackendError
 from core.media import IMAGE_EXTENSIONS, process_image
-from core.state import connect, file_lock, transaction
+from core.state import connect, file_lock, file_record, transaction
 from core.uploads import UPLOAD_CONCURRENCY
 from misc import generate_random_string, wh_report
 from werkzeug.utils import secure_filename
@@ -155,6 +155,8 @@ def recover_pending():
     for row in rows:
         try:
             with file_lock(row["filename"]):
-                recover_name(row["filename"], row, row["sha256"])
+                current = file_record(row["filename"])
+                if current and current["status"] in {"pending", "failed"}:
+                    recover_name(current["filename"], current, current["sha256"])
         except AppError as exception:
             wh_report("Upload recovery could not finish.", exception)

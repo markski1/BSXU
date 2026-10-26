@@ -29,9 +29,6 @@ def transaction(database="storage.sqlite3"):
             yield connection
 
 
-storage_transaction = transaction
-
-
 def init_app(app):
     config = settings()
     config.state_folder.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -110,6 +107,14 @@ def file_lock(filename, timeout=10):
 def file_record(filename):
     with closing(connect()) as connection:
         return connection.execute("SELECT * FROM uploaded_names WHERE filename = ?", (filename,)).fetchone()
+
+
+def count_hit(filename):
+    with transaction() as connection:
+        connection.execute(
+            "UPDATE uploaded_names SET hits = hits + 1, accessed = ? WHERE filename = ?",
+            (time.time(), filename),
+        )
 
 
 def is_deleted(filename):

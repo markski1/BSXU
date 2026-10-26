@@ -139,7 +139,16 @@ def files_ui():
     query = request.args.get("q", "")[:200]
     sort = request.args.get("sort", "newest")
     storage = request.args.get("storage", "all")
-    order = {"newest": "created DESC", "oldest": "created ASC", "name": "filename COLLATE NOCASE", "size": "size DESC", "hits": "hits DESC"}.get(sort, "created DESC")
+    orders = {
+        "newest": "created DESC",
+        "oldest": "created ASC",
+        "name": "filename COLLATE NOCASE",
+        "size": "size DESC",
+        "hits": "hits DESC",
+    }
+    if sort not in orders:
+        sort = "newest"
+    order = orders[sort]
     try:
         page = min(100000, max(1, int(request.args.get("page", "1"))))
     except ValueError:
@@ -150,7 +159,15 @@ def files_ui():
         conditions.append("(filename LIKE ? ESCAPE '\\' OR original_name LIKE ? ESCAPE '\\')")
         pattern = "%" + query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
         parameters.extend([pattern, pattern])
-    filter_condition = {"local": "backed_up = 0", "cached": "cached = 1", "remote": "backed_up = 1 AND cached = 0"}.get(storage)
+    storage_filters = {
+        "all": None,
+        "local": "backed_up = 0",
+        "cached": "cached = 1",
+        "remote": "backed_up = 1 AND cached = 0",
+    }
+    if storage not in storage_filters:
+        storage = "all"
+    filter_condition = storage_filters[storage]
     if filter_condition:
         conditions.append(filter_condition)
     where = " AND ".join(conditions)
@@ -222,7 +239,12 @@ def change_link(filename):
         raise AppError("Finish the pending deletion before changing this link.", 409)
     with transaction() as connection:
         connection.execute("UPDATE uploaded_names SET revoked = ? WHERE filename = ?", (0 if row["revoked"] else 1, filename))
-    flash("Share link restored." if row["revoked"] else "Share link revoked.", "success")
+    if not row["revoked"]:
+        flash("Share link revoked.", "success")
+    elif row["expires"] and row["expires"] <= time.time():
+        flash("Revocation removed. The link is still expired.", "warning")
+    else:
+        flash("Share link restored.", "success")
     return redirect(url_for("panel.files_ui"), code=303)
 
 
@@ -276,19 +298,23 @@ def file_upload():
             result = actions.upload_file(uploaded_file, custom, request.form.get("expiry"))
             results.append({"filename": result.filename, "url": settings().url_path + quote(result.filename)})
         except AppError as exception:
-            errors.append({"index": index, "filename": secure_original(uploaded_file.filename), "message": str(exception), "status": exception.status})
+            errors.append({
+                "index": index,
+                "filename": (uploaded_file.filename or "Selected file")[:200],
+                "message": str(exception),
+                "status": exception.status,
+            })
     if request.headers.get("X-Requested-With") == "XMLHttpRequest":
-        return jsonify(files=results, errors=errors), (201 if results and not errors else 207 if results else errors[0]["status"])
+        if not results:
+            return jsonify(files=results, errors=errors, error=errors[0]["message"]), errors[0]["status"]
+        status = 207 if errors else 201
+        return jsonify(files=results, errors=errors), status
     for error in errors:
         flash(f"{error['filename']}: {error['message']}", "error")
     if results:
         session["upload_results"] = results[:MAX_BATCH_FILES]
         return redirect(url_for("panel.upload_result"), code=303)
     return redirect(url_for("panel.upload_ui"), code=303)
-
-
-def secure_original(filename):
-    return (filename or "Selected file")[:200]
 
 
 @panel_bp.get("/uploaded")
@@ -302,10 +328,12 @@ def upload_result():
 @login_required
 def clear_cache_route():
     with closing(connect()) as connection:
-        local_only = connection.execute("SELECT filename FROM uploaded_names WHERE cached = 1 AND backed_up = 0").fetchall()
-    if local_only and request.form.get("confirmation") != "delete":
-        return render_template("confirm_clear.jinja2", filenames=[row[0] for row in local_only], clear_all=True)
-    clear_cache()
+        files = connection.execute("SELECT filename, backed_up FROM uploaded_names WHERE cached = 1").fetchall()
+    local_only = [row["filename"] for row in files if not row["backed_up"]]
+    confirmed = set(request.form.getlist("filename"))
+    if local_only and (request.form.get("confirmation") != "delete" or not confirmed.issuperset(local_only)):
+        return render_template("confirm_clear.jinja2", filenames=local_only, clear_all=True)
+    clear_cache([row["filename"] for row in files])
     flash("Local storage cleared.", "success")
     return redirect(url_for("panel.files_ui"), code=303)
 

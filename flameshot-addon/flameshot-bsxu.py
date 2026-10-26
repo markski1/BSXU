@@ -8,7 +8,8 @@ import requests
 
 def upload(data, url, key):
     parsed = urlsplit(url)
-    if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.query or parsed.fragment:
+    if (parsed.scheme != "https" or not parsed.hostname or parsed.username is not None
+            or parsed.password is not None or parsed.query or parsed.fragment):
         raise ValueError("BSXU_UPLOAD_URL must be a clean HTTPS upload URL.")
     if len(key) < 32:
         raise ValueError("Set BSXU_UPLOAD_KEY to an upload-only key.")
@@ -22,7 +23,17 @@ def upload(data, url, key):
         response.raise_for_status()
         link = response.text.strip()
         target = urlsplit(link)
-        if response.status_code not in {200, 201} or target.scheme != "https" or target.netloc != parsed.netloc or target.query or target.fragment or target.username or not target.path.strip("/"):
+        valid_link = (
+            response.status_code in {200, 201}
+            and target.scheme == "https"
+            and target.netloc == parsed.netloc
+            and not target.query
+            and not target.fragment
+            and target.username is None
+            and target.password is None
+            and bool(target.path.strip("/"))
+        )
+        if not valid_link:
             raise ValueError("Server did not return a valid file URL.")
         return link
 
@@ -32,12 +43,16 @@ def main():
         link = upload(sys.stdin.buffer.read(128 * 1024 * 1024 + 1),
                       os.environ.get("BSXU_UPLOAD_URL", ""),
                       os.environ.get("BSXU_UPLOAD_KEY", ""))
-        import pyperclip
-        pyperclip.copy(link)
-        return 0
     except (requests.RequestException, ValueError) as exception:
         print("Upload failed: " + str(exception), file=sys.stderr)
         return 1
+    print(link)
+    try:
+        import pyperclip
+        pyperclip.copy(link)
+    except Exception:
+        print("Upload succeeded, but the clipboard is unavailable. The link is printed above.", file=sys.stderr)
+    return 0
 
 
 if __name__ == "__main__":

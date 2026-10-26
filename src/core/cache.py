@@ -1,10 +1,11 @@
 from contextlib import closing, contextmanager
 import hashlib
 import os
-from pathlib import Path
 import secrets
 import shutil
 import time
+
+from werkzeug.utils import secure_filename
 
 from core.config import settings
 from core.errors import AppError
@@ -13,10 +14,7 @@ from misc import wh_report
 
 
 def cache_filepath(filename):
-    if (not filename or filename.startswith(".") or len(filename) > 200
-            or any(character in filename for character in ("/", "\\", ":", "\0"))
-            or any(ord(character) < 32 or ord(character) == 127 for character in filename)
-            or filename != filename.rstrip(" .")):
+    if not filename or len(filename) > 200 or secure_filename(filename) != filename:
         raise AppError("Invalid filename.")
     root = settings().cache_folder
     target = root / filename
@@ -43,18 +41,28 @@ def init_cache():
 
 def recover_staging():
     root = settings().cache_folder / ".staging"
-    with transaction() as connection:
+    with closing(connect()) as connection:
         stale = connection.execute("SELECT id FROM staging WHERE expires < ?", (time.time(),)).fetchall()
-        for row in stale:
-            target = (root / row["id"]).resolve()
-            if target.parent != root.resolve():
-                continue
+    for row in stale:
+        target = root / row["id"]
+        if target.is_symlink() or target.resolve().parent != root.resolve():
+            continue
+        try:
             if target.exists():
                 shutil.rmtree(target)
+        except FileNotFoundError:
+            pass
+        except OSError as exception:
+            wh_report("Temporary file cleanup will be retried.", exception)
+            continue
+        with transaction() as connection:
             connection.execute("DELETE FROM staging WHERE id = ?", (row["id"],))
     for target in root.iterdir():
-        if target.is_file() and target.suffix == ".part" and target.stat().st_mtime < time.time() - 7200:
-            target.unlink(missing_ok=True)
+        try:
+            if target.is_file() and target.suffix == ".part" and target.stat().st_mtime < time.time() - 7200:
+                target.unlink(missing_ok=True)
+        except FileNotFoundError:
+            pass
 
 
 def reconcile_cache():
@@ -83,7 +91,7 @@ def reconcile_cache():
             with file_lock(row["filename"]), transaction() as connection:
                 if not cache_filepath(row["filename"]).is_file():
                     connection.execute("UPDATE uploaded_names SET cached = 0 WHERE filename = ?", (row["filename"],))
-        except AppError as exception:
+        except (AppError, OSError) as exception:
             wh_report("Cache reconciliation will be retried.", exception)
 
 
@@ -106,10 +114,16 @@ def staged_file(reserve_bytes):
         resolved = directory.resolve()
         if resolved.parent != (config.cache_folder / ".staging").resolve():
             raise RuntimeError("Invalid staging path.")
-        if resolved.exists():
-            shutil.rmtree(resolved)
-        with transaction() as connection:
-            connection.execute("DELETE FROM staging WHERE id = ?", (token,))
+        try:
+            if resolved.exists():
+                shutil.rmtree(resolved)
+        except OSError as exception:
+            with transaction() as connection:
+                connection.execute("UPDATE staging SET expires = 0 WHERE id = ?", (token,))
+            wh_report("Temporary file cleanup will be retried.", exception)
+        else:
+            with transaction() as connection:
+                connection.execute("DELETE FROM staging WHERE id = ?", (token,))
 
 
 def cached_size(connection):
@@ -177,10 +191,8 @@ def cleanup_deleted():
             wh_report("Deleted file cleanup will be retried.", exception)
 
 
-def clear_cache():
-    with closing(connect()) as connection:
-        names = [row[0] for row in connection.execute("SELECT filename FROM uploaded_names WHERE cached = 1")]
-    for name in names:
+def clear_cache(filenames):
+    for name in filenames:
         cache_delete_file(name)
 
 

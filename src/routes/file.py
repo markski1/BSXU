@@ -1,22 +1,19 @@
 from datetime import datetime, timezone
 import hashlib
 from pathlib import Path
-import time
 
 from flask import Blueprint, Response, current_app, request, send_file, stream_with_context
-from werkzeug.http import dump_options_header, parse_if_range_header, parse_range_header
-from werkzeug.utils import secure_filename
+from werkzeug.http import dump_options_header
 
 from core import actions, b2connect
 from core.cache import cache_filepath, publish_thumbnail, staged_file, thumbnail_path
 from core.config import settings
-from core.controls import lease, mark_missing, missing, renew_lease
+from core.controls import lease, mark_missing, missing
 from core.errors import AppError, BackendError, NotFound
 from core.media import IMAGE_EXTENSIONS, MIMETYPES, process_image
 from core.uploads import require_upload_key
 from core.request_limits import upload_request
-from core.state import file_record, is_deleted, transaction
-from core.stats import count_hit
+from core.state import count_hit, file_lock, file_record, is_deleted, transaction
 
 file_bp = Blueprint("files", __name__)
 
@@ -34,8 +31,6 @@ def secure_file_response(response):
 
 def validate_filename(filename):
     cache_filepath(filename)
-    if secure_filename(filename) != filename:
-        raise AppError("Invalid filename.")
     if is_deleted(filename):
         raise NotFound()
     row = file_record(filename)
@@ -94,42 +89,32 @@ def remote_response(filename, remote):
     response.set_etag(etag)
     response.last_modified = modified
     response.content_length = remote.size
-    if request.if_none_match.contains(etag):
-        response.status_code = 304
+    response.make_conditional(request, accept_ranges=True, complete_length=remote.size)
+    if response.status_code in {304, 412}:
+        response.content_length = 0
         return secure_file_response(response)
-    start, stop = 0, remote.size
-    range_header = request.headers.get("Range")
-    if range_header and request.headers.get("If-Range"):
-        condition = parse_if_range_header(request.headers["If-Range"])
-        if (condition.etag and condition.etag != etag) or (condition.date and modified > condition.date):
-            range_header = None
-    if range_header:
-        parsed = parse_range_header(range_header)
-        bounds = parsed.range_for_length(remote.size) if parsed and len(parsed.ranges) == 1 else None
-        if bounds is None:
-            response.status_code = 416
-            response.headers["Content-Range"] = f"bytes */{remote.size}"
-            response.content_length = 0
-            return secure_file_response(response)
-        start, stop = bounds
-        response.status_code = 206
-        response.headers["Content-Range"] = f"bytes {start}-{stop - 1}/{remote.size}"
-        response.content_length = stop - start
     if request.method == "HEAD" or remote.size == 0:
         return secure_file_response(response)
 
+    partial = response.status_code == 206
+    start = response.content_range.start if partial else 0
+    stop = response.content_range.stop if partial else remote.size
     slot = lease("downloads", 8)
-    slot_token = slot.__enter__()
+    slot.__enter__()
+    download = None
     try:
         download = b2connect.bucket().download_file_by_name(
-            file_name=filename, range_=(start, stop - 1) if range_header else None,
+            file_name=filename, range_=(start, stop - 1) if partial else None,
         )
         declared = download.response.headers.get("Content-Length")
         if declared is not None and int(declared) != stop - start:
-            download.response.close()
             raise BackendError("The remote file changed. Please retry.")
     except Exception as exception:
-        slot.__exit__(type(exception), exception, exception.__traceback__)
+        try:
+            if download is not None:
+                download.response.close()
+        finally:
+            slot.__exit__(type(exception), exception, exception.__traceback__)
         if isinstance(exception, AppError):
             raise
         raise BackendError() from exception
@@ -140,24 +125,23 @@ def remote_response(filename, remote):
         nonlocal closed
         if not closed:
             closed = True
-            download.response.close()
-            with app.app_context():
-                slot.__exit__(None, None, None)
+            try:
+                download.response.close()
+            finally:
+                with app.app_context():
+                    slot.__exit__(None, None, None)
 
     def chunks():
-        total, renewed = 0, time.monotonic()
+        total = 0
         try:
             for chunk in download.response.iter_content(64 * 1024):
                 total += len(chunk)
                 if total > stop - start:
                     raise BackendError("B2 returned more bytes than expected.")
-                if time.monotonic() - renewed > 30:
-                    renew_lease(slot_token)
-                    renewed = time.monotonic()
                 yield chunk
             if total != stop - start:
                 raise BackendError("B2 returned an incomplete file.")
-            if response.status_code == 200 and not range_header:
+            if response.status_code == 200 and "Range" not in request.headers:
                 count_hit(filename)
         finally:
             close()
@@ -212,7 +196,6 @@ def get_file_thumbnail(filename):
         raise NotFound()
     if request.method == "HEAD":
         raise NotFound()
-    from core.state import file_lock
     with file_lock(filename):
         if not preview.is_file():
             maximum = settings().max_upload_size_mb * 1024 * 1024

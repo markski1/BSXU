@@ -1,4 +1,3 @@
-from contextlib import closing
 from dataclasses import dataclass
 import threading
 import time
@@ -11,7 +10,7 @@ from core.cache import cache_filepath, delete_thumbnail, publish_cache, staged_f
 from core.config import settings
 from core.controls import forget_missing, mark_missing, missing
 from core.errors import AppError, BackendError, NotFound
-from core.state import connect, file_lock, file_record, transaction
+from core.state import file_lock, file_record, transaction
 from misc import wh_report
 
 
@@ -125,7 +124,7 @@ def b2_get_files(cursor=None, prefix=""):
             name = info["fileName"]
             try:
                 cache_filepath(name)
-            except Exception:
+            except AppError:
                 continue
             remember_remote(RemoteFile(name, info.get("size", info.get("contentLength", 0)), info.get("fileInfo", {}), info["uploadTimestamp"] / 1000))
         return next_cursor

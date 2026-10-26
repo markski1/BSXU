@@ -52,8 +52,11 @@ if (form) {
                 const url = URL.createObjectURL(file);
                 objectUrls.push(url);
                 preview.src = url;
-                if (preview.tagName === "VIDEO") preview.preload = "metadata";
-                else preview.alt = "";
+                if (preview.tagName === "VIDEO") {
+                    preview.preload = "metadata";
+                } else {
+                    preview.alt = "";
+                }
                 item.append(preview);
             }
             const label = document.createElement("span");
@@ -61,7 +64,13 @@ if (form) {
             item.append(label);
             selection.append(item);
         });
-        input.setCustomValidity(input.files.length > 5 ? "Select no more than 5 files." : total > Number(form.dataset.maxBytes) ? "The selected files exceed the combined upload limit." : "");
+        let validationMessage = "";
+        if (input.files.length > 5) {
+            validationMessage = "Select no more than 5 files.";
+        } else if (total > Number(form.dataset.maxBytes)) {
+            validationMessage = "The selected files exceed the combined upload limit.";
+        }
+        input.setCustomValidity(validationMessage);
         custom.disabled = input.files.length > 1;
         if (custom.disabled) custom.value = "";
     };
@@ -94,6 +103,7 @@ if (form) {
         uploading = true;
         submit.disabled = true;
         input.disabled = true;
+        results.hidden = true;
         status.hidden = false;
         progress.value = 0;
         message.textContent = "Uploading…";
@@ -113,22 +123,54 @@ if (form) {
         };
         xhr.addEventListener("load", () => {
             finish();
+            const success = xhr.status >= 200 && xhr.status < 300;
+            const failureMessage = {
+                401: "Your sign-in expired. Sign in again before retrying.",
+                403: "The security token expired. Reload the page before retrying.",
+                413: "The upload exceeds the server's size limit.",
+                429: "Upload limit reached. Please wait before retrying."
+            }[xhr.status] || "Upload failed. Please retry or check the server log.";
+            const unexpectedMessage = "The server returned an unexpected upload response. Your selection has been kept.";
             let payload;
-            try { payload = JSON.parse(xhr.responseText); }
-            catch {
-                message.textContent = xhr.status === 401 ? "Your sign-in expired. Sign in again before retrying." : xhr.responseText || "Upload failed. Please retry.";
+            try {
+                payload = JSON.parse(xhr.responseText);
+            } catch {
+                message.textContent = success ? unexpectedMessage : failureMessage;
+                return;
+            }
+            if (!payload || !Array.isArray(payload.files) || !Array.isArray(payload.errors)
+                    || (!payload.files.length && !payload.errors.length)
+                    || (!success && payload.files.length)) {
+                message.textContent = success ? unexpectedMessage : failureMessage;
+                if (typeof payload?.error === "string") message.textContent = payload.error;
+                return;
+            }
+            let fileUrls;
+            try {
+                fileUrls = payload.files.map((file) => new URL(file.url, location.href));
+            } catch {
+                message.textContent = unexpectedMessage;
+                return;
+            }
+            const validFiles = payload.files.every((file, index) => file
+                && typeof file.filename === "string" && typeof file.url === "string"
+                && ["http:", "https:"].includes(fileUrls[index].protocol));
+            const validErrors = payload.errors.every((error) => error
+                && typeof error.filename === "string" && typeof error.message === "string"
+                && Number.isInteger(error.index) && error.index >= 0 && error.index < input.files.length);
+            if (!validFiles || !validErrors) {
+                message.textContent = unexpectedMessage;
                 return;
             }
             results.hidden = false;
             const content = results.querySelector("div");
             content.replaceChildren();
-            (payload.files || []).forEach((file) => {
+            payload.files.forEach((file, index) => {
                 const article = document.createElement("article");
                 const name = document.createElement("strong");
                 name.textContent = file.filename;
                 const link = document.createElement("a");
-                const url = new URL(file.url, location.href);
-                if (!["http:", "https:"].includes(url.protocol)) return;
+                const url = fileUrls[index];
                 link.href = url.href;
                 link.textContent = url.href;
                 const copy = document.createElement("button");
@@ -139,19 +181,25 @@ if (form) {
                 article.append(name, link, copy);
                 content.append(article);
             });
-            (payload.errors || []).forEach((error) => {
+            payload.errors.forEach((error) => {
                 const paragraph = document.createElement("p");
                 paragraph.className = "notice error";
                 paragraph.textContent = error.filename + ": " + error.message;
                 content.append(paragraph);
             });
-            const errors = payload.errors || [];
-            message.textContent = errors.length ? "Some files could not be uploaded. Their details are below." : "Upload complete. Your links are ready.";
+            const errors = payload.errors;
+            if (!errors.length) {
+                message.textContent = "Upload complete. Your links are ready.";
+            } else if (payload.files.length) {
+                message.textContent = "Some files could not be uploaded. Their details are below.";
+            } else {
+                message.textContent = "Upload failed. Details are below.";
+            }
             if (!errors.length) {
                 form.reset();
                 custom.disabled = false;
                 updateSelection();
-            } else if ((payload.files || []).length) {
+            } else if (payload.files.length) {
                 const failed = new Set(errors.map((error) => error.index));
                 useFiles(Array.from(input.files).filter((file, index) => failed.has(index)));
             }

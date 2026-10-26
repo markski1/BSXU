@@ -1,20 +1,23 @@
-# BSXU — B2 ShareX uploader
+# BSXU - B2 Sharex Uploader
 
-BSXU is a Flask application for uploading files from ShareX, Flameshot or a private web panel. Files are stored locally, with an optional private Backblaze B2 backend and a bounded local cache.
+BSXU is a continuation of [PSXU](https://github.com/markski1/PSXU), my previous ShareX upload thing.
 
-The panel provides search, sorting, pagination, image/video previews, upload progress, multiple files, copyable links, link expiry/revocation, upload-only device keys and persistent request statistics. Supported images are processed in a limited subprocess to remove metadata and preserve orientation and animation. Videos play inline; active documents are downloaded as attachments.
+Key differences:
 
-Use Python 3.11 or newer. All server dependency files and deployment material are in src.
+- Implemented as a Flask application.
+- Files are uploaded to a Backblaze B2 bucket (optional).
+- Removes EXIF from images.
+- Server filesystem storage otherwise. In B2 mode, the filesystem is used as a cache to avoid B2 egress fees.
+- Web panel for manual uploading, stats, fetching links.
+- A lot more configurable.
+- In addition to ShareX, a method to use Flameshot is also provided.
 
-Read the [deployment and migration instructions](src/DEPLOYMENT.md) before upgrading. A separate ADMIN_KEY and upload authentication headers are now required. Existing state databases are migrated in place; preserve their location and back them up.
+### Setup
 
-From src:
+You can follow [this guide](https://markski.ar/blog/bsxu-b2-hosting) in my blog.
 
-    sfw uv sync --locked --no-dev
-    .venv/bin/python -m unittest discover -s tests -v
+### Contributing
 
-On Windows, use .venv\Scripts\python.exe for the test command.
+Find issue, don't want to make change, open issue.
 
-Dependencies are locked, with hashed requirements exports. The normal release-age restriction is five days; four security fixes have explicit 24-hour exceptions. Server installations exclude the Flameshot-only clipboard dependency.
-
-Contributions and issue reports are welcome.
+Find issue, want to make change, open PR.
